@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ContentCalendarView from './components/ContentCalendarView';
 import WritingRoomView from './components/WritingRoomView';
 import PublishedTrackerView from './components/PublishedTrackerView';
+import { viewTransition, spring } from './utils/animations';
+
+const viewOrder = ['dashboard', 'content-calendar', 'writing-room', 'published-tracker'];
 
 export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedPost, setSelectedPost] = useState(null);
+  const lastView = useRef('dashboard');
 
   const handleViewOnCalendar = () => setCurrentView('content-calendar');
 
@@ -23,12 +28,13 @@ export default function App() {
 
   const handleSidebarNav = (view) => {
     if (view !== 'writing-room') setSelectedPost(null);
+    lastView.current = currentView;
     setCurrentView(view);
   };
 
   const renderActiveView = () => {
     switch (currentView) {
-      case 'dashboard': return <DashboardView />;
+      case 'dashboard': return <DashboardView onNavigateToPost={handleNavigateToPost} />;
       case 'content-calendar': return <ContentCalendarView onNavigateToPost={handleNavigateToPost} />;
       case 'writing-room':
         return (
@@ -42,12 +48,27 @@ export default function App() {
     }
   };
 
+  const navDirection = (viewOrder.indexOf(currentView) - viewOrder.indexOf(lastView.current)) || 1;
+
+  const vt = viewTransition(navDirection);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden app-bg">
       <Sidebar currentView={currentView} setCurrentView={handleSidebarNav} />
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative pb-16 lg:pb-0">
         <div className="flex-1 flex flex-col h-full overflow-hidden">
-          {renderActiveView()}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentView}
+              initial={vt.initial}
+              animate={vt.animate}
+              exit={vt.exit}
+              transition={{ ...spring.smooth }}
+              className="flex-1 flex flex-col h-full overflow-hidden"
+            >
+              {renderActiveView()}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
     </div>

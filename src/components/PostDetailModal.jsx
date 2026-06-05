@@ -2,6 +2,7 @@ import Modal, { ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import Button from './ui/Button';
 import PropertyPill from './ui/PropertyPill';
 import PillarBadge from './PillarBadge';
+import { getPostTitle } from '../utils/posts';
 
 export default function PostDetailModal({ post, onClose, onDelete, onEdit }) {
   const formatDate = (dateStr) =>
@@ -9,7 +10,7 @@ export default function PostDetailModal({ post, onClose, onDelete, onEdit }) {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     });
 
-  const title = post.hook_idea || post.raw_idea || 'Untitled';
+  const title = getPostTitle(post);
   const draftPreview = post.draft ? post.draft.substring(0, 300) : null;
 
   return (

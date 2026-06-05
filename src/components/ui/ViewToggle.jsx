@@ -1,6 +1,6 @@
 export default function ViewToggle({ options, value, onChange }) {
   return (
-    <div className="flex gap-0.5 p-1 bg-bg-primary/80 border border-border-brand/60 rounded-xl backdrop-blur-sm">
+    <div className="flex flex-wrap gap-0.5 p-1 bg-bg-primary/80 border border-border-brand/60 rounded-xl backdrop-blur-sm">
       {options.map(opt => (
         <button
           key={opt.id}

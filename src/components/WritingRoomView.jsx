@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '../utils/supabase';
 import PillarBadge from './PillarBadge';
 import Button from './ui/Button';
 import PropertyPill from './ui/PropertyPill';
+import { spring, micro, stagger, staggerContainer, cardItem, toastItem } from '../utils/animations';
+import { getPostTitle } from '../utils/posts';
 
 const FORMATS = ['Story Post', 'Educational Post', 'Case Study', 'Opinion Post', 'Contrarian Post', 'Offer Post'];
 const PILLARS = ['Website Reality', 'Strategic Reframe', 'Web Solution Thinking', 'Personal Reflection', 'Soft Positioning'];
@@ -19,6 +22,7 @@ const statusLabel = (status) => {
   if (status === 'idea') return 'Seed';
   if (status === 'drafting') return 'Drafting';
   if (status === 'scheduled') return 'Scheduled';
+  if (status === 'published') return 'Published';
   return status;
 };
 
@@ -42,11 +46,14 @@ function PipelineDropZone({ config, count, active, onClick }) {
   const { setNodeRef, isOver } = useDroppable({ id: `stage:${config.status}` });
 
   return (
-    <button
+    <motion.button
       ref={setNodeRef}
       type="button"
       onClick={onClick}
-      className={`w-full rounded-xl border px-3 py-3 text-left transition-ui ${
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      className={`w-full rounded-xl border px-3 py-3 text-left ${
         isOver
           ? 'border-accent bg-accent/10 shadow-lg shadow-accent/10'
           : active
@@ -61,7 +68,7 @@ function PipelineDropZone({ config, count, active, onClick }) {
           {count}
         </span>
       </div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -72,11 +79,14 @@ function SeedCard({ post, onDraft, onDelete }) {
   });
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
-      className={`group rounded-xl border border-border-brand/50 bg-bg-secondary/80 p-4 shadow-sm transition-ui ${
-        isDragging ? 'opacity-40 shadow-lg shadow-accent/10' : 'hover:-translate-y-0.5 hover:border-accent/35 hover:bg-bg-tertiary/80'
+      whileHover={{ ...micro.hoverLift }}
+      whileTap={{ ...micro.tap }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+      className={`group rounded-xl border border-border-brand/50 bg-bg-secondary/80 p-4 shadow-sm ${
+        isDragging ? 'opacity-40 shadow-lg shadow-accent/20 scale-95' : ''
       }`}
     >
       <div className="flex items-start gap-3">
@@ -92,7 +102,7 @@ function SeedCard({ post, onDraft, onDelete }) {
           </svg>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-3 text-sm font-semibold leading-relaxed text-text-primary">{post.raw_idea || 'Untitled seed'}</p>
+          <p className="line-clamp-3 text-sm font-semibold leading-relaxed text-text-primary">{getPostTitle(post)}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <PropertyPill label="Seed" dot />
             <span className="text-xs text-text-muted">
@@ -116,14 +126,16 @@ function SeedCard({ post, onDraft, onDelete }) {
           </svg>
         </button>
       </div>
-    </div>
-  );
-}
+      </motion.div>
+    );
+  }
 
 function DraftListCard({ post, onSelect, onDelete }) {
   return (
-    <div
-      className="group rounded-xl border border-border-brand/45 bg-bg-secondary/70 p-4 transition-ui hover:border-accent/35 hover:bg-bg-tertiary/70"
+    <motion.div
+      whileHover={{ ...micro.hoverLift }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+      className="group rounded-xl border border-border-brand/45 bg-bg-secondary/70 p-4 hover:border-accent/35 hover:bg-bg-tertiary/70"
     >
       <button type="button" onClick={() => onSelect(post)} className="block w-full text-left">
         <div className="flex items-center gap-2">
@@ -131,7 +143,7 @@ function DraftListCard({ post, onSelect, onDelete }) {
           {post.pillar && <PillarBadge pillar={post.pillar} size="sm" />}
         </div>
         <p className="mt-3 line-clamp-2 text-sm font-semibold text-text-primary">
-          {post.hook_idea || post.raw_idea || post.draft || 'Untitled draft'}
+          {getPostTitle(post)}
         </p>
         {post.draft && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-text-secondary">{post.draft}</p>}
       </button>
@@ -150,11 +162,11 @@ function DraftListCard({ post, onSelect, onDelete }) {
           </svg>
         </button>
       </div>
-    </div>
-  );
-}
+      </motion.div>
+    );
+  }
 
-export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
+  export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
   const [posts, setPosts] = useState([]);
   const [activePost, setActivePost] = useState(null);
   const [quickIdeaText, setQuickIdeaText] = useState('');
@@ -484,18 +496,23 @@ export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
             <p className="text-sm font-semibold text-text-primary">No {statusLabel(activeBoardTab).toLowerCase()} posts here yet</p>
             <p className="mt-1 max-w-sm text-xs text-text-secondary">Capture a seed above, or move posts between stages from the pipeline.</p>
           </div>
-        ) : activeBoardTab === 'idea' ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {visibleBoardPosts.map(post => (
-              <SeedCard key={post.id} post={post} onDraft={handleDraftSeed} onDelete={handleDelete} />
-            ))}
-          </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <motion.div
+            variants={staggerContainer(stagger.medium.staggerChildren, 0.35)}
+            initial="hidden"
+            animate="visible"
+            className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
+          >
             {visibleBoardPosts.map(post => (
-              <DraftListCard key={post.id} post={post} onSelect={handleSelectPost} onDelete={handleDelete} />
+              <motion.div key={post.id} variants={cardItem}>
+                {activeBoardTab === 'idea' ? (
+                  <SeedCard post={post} onDraft={handleDraftSeed} onDelete={handleDelete} />
+                ) : (
+                  <DraftListCard post={post} onSelect={handleSelectPost} onDelete={handleDelete} />
+                )}
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         )}
       </div>
     </div>
@@ -646,35 +663,58 @@ export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
                   <span className={draft.length > 0 ? 'font-medium text-accent' : ''}>{draft.length.toLocaleString()} characters</span>
                   <span className="hidden text-text-secondary/50 sm:inline">Auto-saves after you pause typing</span>
                 </div>
-                <Button onClick={handlePublish} disabled={!(draft.trim() || hookIdea.trim() || activePost.raw_idea?.trim())} size="sm">
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Publish
-                </Button>
+                {activePost.status === 'published' ? (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-success bg-success/10 px-3 py-1.5 rounded-xl">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Published
+                  </span>
+                ) : (
+                  <Button onClick={handlePublish} disabled={!(draft.trim() || hookIdea.trim() || activePost.raw_idea?.trim())} size="sm">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Publish
+                  </Button>
+                )}
               </footer>
             </>
           ) : renderIdeaDump()}
         </main>
 
+        <AnimatePresence>
         {toast && (
-          <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-slideIn">
+          <motion.div
+            initial={toastItem.initial}
+            animate={toastItem.animate}
+            exit={toastItem.exit}
+            transition={toastItem.transition}
+            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2"
+          >
             <div className="flex items-center gap-2 rounded-xl border border-accent/30 bg-bg-secondary px-4 py-2.5 shadow-lg">
               <svg className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
               <span className="text-xs font-semibold text-text-primary">{toast.message}</span>
             </div>
-          </div>
+          </motion.div>
         )}
+      </AnimatePresence>
       </div>
 
       <DragOverlay>
         {draggedPost ? (
-          <div className="w-64 rounded-xl border border-accent/40 bg-bg-tertiary p-4 shadow-2xl shadow-accent/15">
-            <p className="line-clamp-2 text-sm font-semibold text-text-primary">{draggedPost.raw_idea || draggedPost.hook_idea || 'Untitled'}</p>
+          <motion.div
+            initial={{ scale: 0.9, rotate: -2, opacity: 0 }}
+            animate={{ scale: 1, rotate: -2, opacity: 1 }}
+            exit={{ scale: 0.9, rotate: -2, opacity: 0 }}
+            transition={{ ...spring.snappy }}
+            className="w-64 rounded-xl border border-accent/40 bg-bg-tertiary p-4 shadow-2xl shadow-accent/20"
+          >
+            <p className="line-clamp-2 text-sm font-semibold text-text-primary">{getPostTitle(draggedPost)}</p>
             <p className="mt-2 text-xs text-accent">Move to stage</p>
-          </div>
+          </motion.div>
         ) : null}
       </DragOverlay>
     </DndContext>

@@ -1,3 +1,6 @@
+import { motion } from 'framer-motion';
+import { spring, micro, stagger, staggerContainer, listItem } from '../utils/animations';
+
 const menuItems = [
   {
     id: 'dashboard',
@@ -39,53 +42,96 @@ const menuItems = [
 
 export default function Sidebar({ currentView, setCurrentView }) {
   return (
-    <aside className="w-[72px] hover:w-56 group/sidebar bg-bg-secondary/80 backdrop-blur-xl border-r border-border-brand/50 flex flex-col h-screen shrink-0 z-30 transition-[width] duration-300 ease-out overflow-hidden">
-      <div className="p-4 border-b border-border-brand/40 flex items-center gap-3 min-h-[72px]">
-        <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center shadow-lg glow-purple animate-pulseGlow">
-          <span className="text-sm font-black text-white">W</span>
+    <>
+      <aside className="hidden lg:flex w-[72px] hover:w-56 group/sidebar bg-bg-secondary/80 backdrop-blur-xl border-r border-border-brand/50 flex-col h-screen shrink-0 z-30 transition-[width] duration-300 ease-out overflow-hidden">
+        <div className="p-4 border-b border-border-brand/40 flex items-center gap-3 min-h-[72px]">
+          <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center shadow-lg glow-purple animate-pulseGlow">
+            <span className="text-sm font-black text-white">W</span>
+          </div>
+          <div className="opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+            <p className="text-sm font-bold gradient-text">Web Solutionist</p>
+            <p className="text-[10px] text-text-muted font-medium tracking-wide">Founder CMS</p>
+          </div>
         </div>
-        <div className="opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-          <p className="text-sm font-bold gradient-text">Web Solutionist</p>
-          <p className="text-[10px] text-text-muted font-medium tracking-wide">Founder CMS</p>
-        </div>
-      </div>
 
-      <nav className="flex-1 py-4 px-2 space-y-1">
+        <nav className="flex-1 py-4 px-2 space-y-1">
+          <motion.div variants={staggerContainer(stagger.fast.staggerChildren)} initial="hidden" animate="visible">
+            {menuItems.map((item, idx) => {
+              const isActive = currentView === item.id;
+              return (
+                <motion.div key={item.id} variants={listItem}>
+                  <motion.button
+                    onClick={() => setCurrentView(item.id)}
+                    title={item.label}
+                    whileHover={{ ...micro.hoverLift }}
+                    whileTap={{ ...micro.tap }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium cursor-pointer relative ${
+                      isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.span
+                        layoutId="activeBg"
+                        transition={{ ...spring.smooth }}
+                        className="absolute inset-0 bg-gradient-to-r from-accent-purple/15 to-accent/5 rounded-xl border border-accent/20"
+                      />
+                    )}
+                    {isActive && (
+                      <motion.span
+                        layoutId="activeBar"
+                        transition={{ ...spring.bouncy }}
+                        className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-gradient-to-b from-accent-purple to-accent shadow-[0_0_8px_rgba(124,58,237,0.6)]"
+                      />
+                    )}
+                    <motion.span
+                      whileHover={{ ...micro.iconHover }}
+                      className={`relative z-10 shrink-0 ${isActive ? 'text-accent' : ''}`}
+                    >
+                      {item.icon}
+                    </motion.span>
+                    <span className="relative z-10 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap">{item.label}</span>
+                  </motion.button>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        </nav>
+
+        <div className="p-3 border-t border-border-brand/40">
+          <div className="flex items-center gap-3 px-2 py-2">
+            <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-accent to-accent-deep flex items-center justify-center text-sm font-bold text-white ring-2 ring-accent/20">
+              P
+            </div>
+            <div className="opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+              <p className="text-xs font-semibold text-text-primary">Precious</p>
+              <p className="text-[10px] text-text-muted">Web Solutionist</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <nav className="flex lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-bg-secondary/95 backdrop-blur-xl border-t border-border-brand/50 safe-area-bottom">
         {menuItems.map(item => {
           const isActive = currentView === item.id;
           return (
             <button
               key={item.id}
               onClick={() => setCurrentView(item.id)}
-              title={item.label}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-ui cursor-pointer relative ${
-                isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50'
+              className={`flex flex-1 flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] transition-ui cursor-pointer ${
+                isActive ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
-              {isActive && (
-                <span className="absolute inset-0 bg-gradient-to-r from-accent-purple/15 to-accent/5 rounded-xl border border-accent/20" />
-              )}
-              {isActive && (
-                <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-gradient-to-b from-accent-purple to-accent shadow-[0_0_8px_rgba(124,58,237,0.6)]" />
-              )}
-              <span className={`relative z-10 shrink-0 ${isActive ? 'text-accent' : ''}`}>{item.icon}</span>
-              <span className="relative z-10 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap">{item.label}</span>
+              <span className={`relative ${isActive ? 'after:absolute after:-bottom-2 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-accent' : ''}`}>
+                {item.icon}
+              </span>
+              <span className={`text-[10px] font-semibold ${isActive ? 'text-accent' : 'text-text-secondary'}`}>
+                {item.label}
+              </span>
             </button>
           );
         })}
       </nav>
-
-      <div className="p-3 border-t border-border-brand/40">
-        <div className="flex items-center gap-3 px-2 py-2">
-          <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-accent to-accent-deep flex items-center justify-center text-sm font-bold text-white ring-2 ring-accent/20">
-            P
-          </div>
-          <div className="opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-            <p className="text-xs font-semibold text-text-primary">Precious</p>
-            <p className="text-[10px] text-text-muted">Web Solutionist</p>
-          </div>
-        </div>
-      </div>
-    </aside>
+    </>
   );
 }

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { supabase } from '../utils/supabase';
 import PillarBadge from './PillarBadge';
 import PageHeader from './ui/PageHeader';
+import { spring, micro, cardItem, staggerContainer } from '../utils/animations';
+import { getPostTitle } from '../utils/posts';
 
-export default function DashboardView() {
+export default function DashboardView({ onNavigateToPost }) {
   const [loading, setLoading] = useState(true);
 
   const [stats, setStats] = useState({
@@ -272,11 +275,19 @@ export default function DashboardView() {
     },
   ];
 
-  const staggerDelays = ['0ms', '80ms', '160ms', '240ms', '320ms'];
+  const containerVariants = staggerContainer(0.07, 0.4);
+
+  const chartVariants = {
+    hidden: { opacity: 0, y: 24, scale: 0.98 },
+    visible: {
+      opacity: 1, y: 0, scale: 1,
+      transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+    },
+  };
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin bg-bg-primary">
+      <div       className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 md:space-y-8 scrollbar-thin bg-bg-primary">
         <div className="border-b border-border-brand/50 pb-6 select-none space-y-2">
           <div className="h-8 w-48 skeleton" />
           <div className="h-3 w-64 skeleton" />
@@ -313,27 +324,41 @@ export default function DashboardView() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 space-y-8 animate-fadeIn scrollbar-thin bg-bg-primary">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+      className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin bg-bg-primary"
+    >
       <PageHeader
         title="Content Overview"
         subtitle="Track performance and audit your content output"
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5"
+      >
         {statCards.map((stat, i) => (
-          <div
+          <motion.div
             key={i}
-            className="glass-card gradient-border-top relative p-5 flex flex-col gap-1 border border-border-brand group hover:border-accent/40 hover:-translate-y-1 transition-all duration-300 animate-slideUp cursor-default"
-            style={{ animationDelay: staggerDelays[i], animationFillMode: 'forwards' }}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{stat.label}</span>
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent/20 to-accent-deep/20 border border-accent/10 flex items-center justify-center group-hover:border-accent/30 group-hover:glow-accent transition-all duration-300">
-                <span className="text-accent group-hover:drop-shadow-[0_0_4px_rgba(0,180,216,0.5)] transition-all duration-300">
-                  {stat.icon}
-                </span>
-              </div>
-            </div>
+            variants={cardItem}
+            whileHover={{ ...micro.hoverLift }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                className="glass-card gradient-border-top relative p-3 sm:p-5 flex flex-col gap-1 border border-border-brand group cursor-default"
+              >
+                <div className="flex items-center justify-between mb-1 sm:mb-2">
+                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-text-secondary">{stat.label}</span>
+                  <motion.div
+                    whileHover={{ ...micro.iconHover, borderColor: 'rgba(0, 180, 216, 0.4)' }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-accent/20 to-accent-deep/20 border border-accent/10 flex items-center justify-center"
+                  >
+                    <span className="text-accent scale-75 sm:scale-100">{stat.icon}</span>
+                  </motion.div>
+                </div>
             {stat.suffix ? (
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl font-black text-text-primary group-hover:text-accent transition-colors duration-300">{stat.value}</span>
@@ -345,86 +370,107 @@ export default function DashboardView() {
               </span>
             )}
             <span className="text-[9px] text-text-secondary mt-1">{stat.sub}</span>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div
-          className="glass-card p-6 border border-border-brand space-y-4 animate-slideUp"
-          style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}
+      <motion.div
+        variants={cardItem}
+        initial="hidden"
+        animate="visible"
+        className="grid grid-cols-1 lg:grid-cols-2 gap-8"
+      >
+        <motion.div
+          variants={cardItem}
+          className="glass-card p-6 border border-border-brand space-y-4"
         >
           <div className="flex items-center justify-between pb-3 border-b border-border-brand/40">
             <h3 className="text-sm font-semibold text-text-primary">Impressions by format</h3>
             <div className="flex gap-1 p-0.5 bg-bg-primary border border-border-brand rounded-lg">
-              <button
+              <motion.button
                 onClick={() => setFormatChartType('bar')}
+                whileTap={{ ...micro.tap }}
                 className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${formatChartType === 'bar' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
               >
                 Bar
-              </button>
-              <button
+              </motion.button>
+              <motion.button
                 onClick={() => setFormatChartType('pie')}
+                whileTap={{ ...micro.tap }}
                 className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${formatChartType === 'pie' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
               >
                 Pie
-              </button>
+              </motion.button>
             </div>
           </div>
           {formatData.length > 0
             ? (formatChartType === 'bar' ? renderBarChart(formatData, Math.max(...formatData.map(d => d.value)) || 100) : renderPieChart(formatData))
             : renderEmptyChart()}
-        </div>
+        </motion.div>
 
-        <div
-          className="glass-card p-6 border border-border-brand space-y-4 animate-slideUp"
-          style={{ animationDelay: '300ms', animationFillMode: 'forwards' }}
+        <motion.div
+          variants={cardItem}
+          className="glass-card p-6 border border-border-brand space-y-4"
         >
           <div className="flex items-center justify-between pb-3 border-b border-border-brand/40">
             <h3 className="text-sm font-semibold text-text-primary">Impressions by pillar</h3>
             <div className="flex gap-1 p-0.5 bg-bg-primary border border-border-brand rounded-lg">
-              <button
+              <motion.button
                 onClick={() => setPillarChartType('bar')}
+                whileTap={{ ...micro.tap }}
                 className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${pillarChartType === 'bar' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
               >
                 Bar
-              </button>
-              <button
+              </motion.button>
+              <motion.button
                 onClick={() => setPillarChartType('pie')}
+                whileTap={{ ...micro.tap }}
                 className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${pillarChartType === 'pie' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
               >
                 Pie
-              </button>
+              </motion.button>
             </div>
           </div>
           {pillarData.length > 0
             ? (pillarChartType === 'bar' ? renderBarChart(pillarData, Math.max(...pillarData.map(d => d.value)) || 100) : renderPieChart(pillarData))
             : renderEmptyChart()}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
-      <div
-        className="glass-card p-6 border border-border-brand space-y-4 animate-slideUp"
-        style={{ animationDelay: '400ms', animationFillMode: 'forwards' }}
+      <motion.div
+        variants={cardItem}
+        initial="hidden"
+        animate="visible"
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        className="glass-card p-4 sm:p-6 border border-border-brand space-y-3 sm:space-y-4"
       >
         <div className="flex items-center justify-between pb-3 border-b border-border-brand/40">
           <h3 className="text-sm font-semibold text-text-primary">This month&apos;s performance</h3>
-          <span className="text-[10px] text-text-secondary font-semibold">Ranked by impressions</span>
+          <span className="max-sm:hidden text-[10px] text-text-secondary font-semibold">Ranked by impressions</span>
         </div>
 
         {monthlyPosts.length > 0 ? (
-          <div className="space-y-2">
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="space-y-2"
+          >
             {monthlyPosts.map((post, idx) => (
-              <div
+              <motion.div
                 key={post.id}
-                className="flex items-center gap-4 p-3 rounded-xl bg-bg-primary/30 border border-border-brand/40 hover:bg-bg-tertiary/30 hover:border-accent/30 hover:glow-accent transition-all duration-300 relative group cursor-pointer"
+                variants={cardItem}
+                whileHover={{ x: 4 }}
+                transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                onClick={() => onNavigateToPost?.(post)}
+                className="flex items-center gap-4 p-3 rounded-xl bg-bg-primary/30 border border-border-brand/40 hover:bg-bg-tertiary/30 hover:border-accent/30 hover:glow-accent cursor-pointer"
               >
                 <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-md bg-gradient-to-b from-accent-purple to-accent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center shrink-0 glow-accent">
                   <span className="text-[11px] font-black text-white">#{idx + 1}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-text-primary truncate">{post.hook_idea || post.raw_idea || 'Untitled'}</p>
+                  <p className="text-xs font-bold text-text-primary truncate">{getPostTitle(post)}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     {post.format && <span className="text-[9px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded">{post.format}</span>}
                     <PillarBadge pillar={post.pillar} />
@@ -433,23 +479,23 @@ export default function DashboardView() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-6 shrink-0">
+                <div className="flex items-center gap-1 sm:gap-6 shrink-0">
                   <div className="text-right">
                     <span className="text-xs font-black text-accent">{(post.impressions || 0).toLocaleString()}</span>
-                    <span className="text-[9px] text-text-secondary block">impressions</span>
+                    <span className="text-[8px] sm:text-[9px] text-text-secondary block">imps</span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right max-sm:hidden">
                     <span className="text-xs font-bold text-text-primary">{(post.comments || 0).toLocaleString()}</span>
-                    <span className="text-[9px] text-text-secondary block">comments</span>
+                    <span className="text-[8px] sm:text-[9px] text-text-secondary block">comments</span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right max-sm:hidden">
                     <span className="text-xs font-bold text-text-secondary">{(post.profile_views || 0).toLocaleString()}</span>
-                    <span className="text-[9px] text-text-secondary block">views</span>
+                    <span className="text-[8px] sm:text-[9px] text-text-secondary block">views</span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         ) : (
           <div className="h-36 border border-dashed border-border-brand/40 rounded-xl flex flex-col items-center justify-center text-center animate-fadeIn">
             <div className="w-10 h-10 rounded-full bg-bg-tertiary border border-border-brand/50 flex items-center justify-center mb-2">
@@ -461,7 +507,7 @@ export default function DashboardView() {
             <p className="text-[10px] text-text-secondary/60 mt-1">Publish posts to see your monthly performance.</p>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

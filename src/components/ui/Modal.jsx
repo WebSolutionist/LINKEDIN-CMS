@@ -1,4 +1,10 @@
 import { useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { modalOverlay, modalContent } from '../../utils/animations';
+
+const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-3xl' };
+
+const modalSizing = 'm-0 sm:m-4 min-h-screen sm:min-h-0 rounded-none sm:rounded-2xl';
 
 export default function Modal({ open, onClose, children, size = 'md', className = '' }) {
   useEffect(() => {
@@ -8,21 +14,37 @@ export default function Modal({ open, onClose, children, size = 'md', className 
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  if (!open) return null;
-
-  const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-3xl' };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xl animate-fadeIn" onClick={onClose}>
-      <div
-        className={`glass-modal relative flex flex-col w-full ${sizes[size]} overflow-hidden animate-scaleIn select-none ${className}`}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="absolute -top-32 -right-32 w-64 h-64 bg-accent-purple/8 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-accent/8 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative">{children}</div>
-      </div>
-    </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={modalOverlay.initial}
+          animate={modalOverlay.animate}
+          exit={modalOverlay.exit}
+          transition={modalOverlay.transition}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-xl"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={modalContent.initial}
+            animate={modalContent.animate}
+            exit={modalContent.exit}
+            transition={modalContent.transition}
+            className={`glass-modal relative flex flex-col w-full ${sizes[size]} ${modalSizing} overflow-hidden select-none ${className}`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="absolute -top-32 -right-32 w-64 h-64 bg-accent-purple/8 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-accent/8 rounded-full blur-3xl pointer-events-none" />
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0, transition: { delay: 0.1, type: 'spring', stiffness: 350, damping: 28 } }}
+            >
+              {children}
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

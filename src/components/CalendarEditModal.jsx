@@ -9,7 +9,7 @@ const selectClass = "w-full bg-bg-primary text-sm text-text-primary border borde
 const inputClass = "w-full bg-bg-primary text-sm text-text-primary border border-border-brand/60 rounded-xl px-4 py-3 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-ui placeholder:text-text-muted";
 const chevron = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`;
 
-export default function CalendarEditModal({ date, entry, onClose, onSave }) {
+export default function CalendarEditModal({ date, entry, onClose, onSave, onSkipToWriting }) {
   const [hookIdea, setHookIdea] = useState(entry?.hook_idea || '');
   const [format, setFormat] = useState(entry?.format || '');
   const [pillar, setPillar] = useState(entry?.pillar || '');
@@ -67,7 +67,15 @@ export default function CalendarEditModal({ date, entry, onClose, onSave }) {
 
       <ModalFooter>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save to calendar'}</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => { onClose(); onSkipToWriting?.(date); }}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Write
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save to calendar'}</Button>
+        </div>
       </ModalFooter>
     </Modal>
   );

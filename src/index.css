@@ -94,6 +94,10 @@ input, textarea, select, button {
   opacity: 0.7;
 }
 
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 .app-bg {
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 58, 237, 0.12), transparent),

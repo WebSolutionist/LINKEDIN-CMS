@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase';
+import { getPostTitle } from '../utils/posts';
 import PageHeader from './ui/PageHeader';
 import PropertyPill from './ui/PropertyPill';
 import PillarBadge from './PillarBadge';
@@ -46,17 +47,6 @@ export default function PublishedTrackerView({ onViewOnCalendar }) {
   useEffect(() => { fetchPublishedPosts(); // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
-  const getPostTitle = (post) => {
-    if (post.hook_idea) return post.hook_idea;
-    if (post.draft) {
-      const lines = post.draft.split('\n');
-      const firstLine = lines.find(l => l.trim().length > 0);
-      if (firstLine) return firstLine.length > 60 ? firstLine.substring(0, 60) + '...' : firstLine;
-    }
-    if (post.raw_idea) return post.raw_idea.length > 60 ? post.raw_idea.substring(0, 60) + '...' : post.raw_idea;
-    return 'Untitled Post';
-  };
-
   const filteredPosts = posts.filter(post => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -67,7 +57,7 @@ export default function PublishedTrackerView({ onViewOnCalendar }) {
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-bg-primary scrollbar-thin">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 bg-bg-primary scrollbar-thin">
         <div className="pb-6 border-b border-border-brand/40 space-y-2">
           <div className="h-8 w-56 skeleton" />
           <div className="h-4 w-72 skeleton" />
@@ -90,6 +80,7 @@ export default function PublishedTrackerView({ onViewOnCalendar }) {
                   <div className="h-3 w-14 skeleton" />
                   <div className="h-3 w-14 skeleton" />
                   <div className="h-3 w-14 skeleton" />
+                  <div className="h-3 w-14 skeleton" />
                 </div>
               </div>
             ))}
@@ -100,7 +91,7 @@ export default function PublishedTrackerView({ onViewOnCalendar }) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-bg-primary animate-fadeIn scrollbar-thin">
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 bg-bg-primary animate-fadeIn scrollbar-thin">
       <PageHeader
         title="Published Tracker"
         subtitle="Audit live performance and update metrics"
@@ -143,6 +134,7 @@ export default function PublishedTrackerView({ onViewOnCalendar }) {
                   <th className="px-6 py-3.5 font-normal">Pillar</th>
                   <th className="px-6 py-3.5 font-normal text-center">Impressions</th>
                   <th className="px-6 py-3.5 font-normal text-center">Comments</th>
+                  <th className="px-6 py-3.5 font-normal text-center">Likes</th>
                   <th className="px-6 py-3.5 font-normal text-center">Profile views</th>
                   <th className="px-6 py-3.5 font-normal">Published</th>
                   <th className="px-6 py-3.5 font-normal text-right">Actions</th>
@@ -179,6 +171,9 @@ export default function PublishedTrackerView({ onViewOnCalendar }) {
                     </td>
                     <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
                       {(post.comments || 0).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
+                      {(post.likes || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
                       {(post.profile_views || 0).toLocaleString()}

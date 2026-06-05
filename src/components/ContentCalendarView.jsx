@@ -1,7 +1,9 @@
 import { Fragment, useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '../utils/supabase';
+import { spring, micro, staggerContainer, listItem } from '../utils/animations';
 import PageHeader from './ui/PageHeader';
 import ViewToggle from './ui/ViewToggle';
 import Button from './ui/Button';
@@ -63,7 +65,8 @@ const formatDateStr = (year, month, day) => `${year}-${String(month + 1).padStar
 
 const normalizeCSVHeader = (header) => header.trim().toLowerCase().replace(/[\s-]+/g, '_');
 
-const postTitle = (post) => post.hook_idea || post.raw_idea || post.draft || 'Untitled';
+import { getPostTitle } from '../utils/posts';
+const postTitle = (post) => getPostTitle(post);
 
 const isPublished = (post) => post.status === 'published' || Boolean(post.published_at);
 
@@ -95,16 +98,19 @@ function DraggableCalendarPost({ post, children, className = '', onClick }) {
   });
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
       onClick={onClick}
-      className={`${className} ${isDragging ? 'opacity-40' : ''}`}
+      whileHover={{ ...micro.hoverLift, borderColor: 'rgba(0, 180, 216, 0.5)' }}
+      whileTap={{ ...micro.tap }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      className={`${className} ${isDragging ? 'opacity-40 shadow-lg shadow-accent/20' : ''}`}
       {...attributes}
       {...listeners}
     >
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -335,8 +341,6 @@ export default function ContentCalendarView({ onNavigateToPost }) {
   const firstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay();
   const calendarDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
-  const unscheduledPosts = posts.filter(p => !p.calendar_date && ['drafting', 'scheduled'].includes(p.status));
-
   const isPostDay = (day) => {
     const dayOfWeek = new Date(currentYear, currentMonth, day).getDay();
     return dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5;
@@ -385,6 +389,21 @@ export default function ContentCalendarView({ onNavigateToPost }) {
     if (onNavigateToPost) onNavigateToPost(post);
   };
 
+  const handleSkipToWriting = async (date) => {
+    setEditModal(null);
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .insert({ calendar_date: date, status: 'drafting', raw_idea: '' })
+        .select()
+        .single();
+      if (error) throw error;
+      if (data && onNavigateToPost) onNavigateToPost(data);
+    } catch (err) {
+      console.error('Error creating post:', err);
+    }
+  };
+
   const pillarGradientFrom = (pillar) => getPillarDotColor(pillar).replace('bg-', 'from-');
 
   const renderCalendarView = () => (
@@ -395,7 +414,7 @@ export default function ContentCalendarView({ onNavigateToPost }) {
         </div>
       ))}
       {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-        <div key={`empty-${i}`} className="bg-bg-primary/50 min-h-[140px] border-b border-r border-border-brand/15" />
+        <div key={`empty-${i}`} className="bg-bg-primary/50 min-h-[100px] sm:min-h-[140px] border-b border-r border-border-brand/15" />
       ))}
       {calendarDays.map(day => {
         const postsForDay = getPostsForDate(day);
@@ -408,7 +427,7 @@ export default function ContentCalendarView({ onNavigateToPost }) {
             key={day}
             date={dateStr}
             onClick={() => handleCellClick(day)}
-            className={`bg-bg-primary min-h-[140px] p-2.5 flex flex-col gap-1.5 border-b border-r border-border-brand/15 transition-ui cursor-pointer relative group/cell ${
+            className={`bg-bg-primary min-h-[100px] sm:min-h-[140px] p-1.5 sm:p-2.5 flex flex-col gap-1 border-b border-r border-border-brand/15 transition-ui cursor-pointer relative group/cell ${
               today ? 'ring-2 ring-accent ring-inset' : ''
             } ${
               postsForDay.length === 0 ? 'border-dashed border-border-brand/25' : ''
@@ -632,56 +651,9 @@ export default function ContentCalendarView({ onNavigateToPost }) {
     );
   };
 
-  const renderUnscheduledIdeas = () => {
-    if (unscheduledPosts.length === 0) return null;
-    return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-text-primary">Unscheduled ideas</h3>
-          <span className="text-xs font-medium text-text-secondary bg-bg-tertiary px-2 py-0.5 rounded-full border border-border-brand/40">
-            {unscheduledPosts.length}
-          </span>
-        </div>
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-          {unscheduledPosts.map(post => (
-            <DraggableCalendarPost
-              key={post.id}
-              post={post}
-              onClick={() => onNavigateToPost && onNavigateToPost(post)}
-              className="shrink-0 w-56 glass-card p-4 cursor-grab active:cursor-grabbing hover:border-accent/40 transition-ui space-y-2 select-none group/idea"
-            >
-              <div className="flex items-start justify-between gap-1">
-                <span className="text-sm font-semibold text-text-primary line-clamp-2 flex-1">
-                  {post.raw_idea || post.hook_idea || 'Untitled'}
-                </span>
-                <button
-                  type="button"
-                  onClick={e => { e.stopPropagation(); handleDeletePost(post.id); }}
-                  className="shrink-0 p-1 rounded text-text-muted hover:text-danger hover:bg-bg-tertiary opacity-0 group-hover/idea:opacity-100 transition-ui cursor-pointer"
-                  title="Delete post"
-                >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <PropertyPill label={post.draft ? 'Draft' : 'Seed'} />
-                <span className="text-xs text-text-muted">
-                  {new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
-              </div>
-              <p className="text-xs text-text-muted italic">Drag to a calendar day to schedule</p>
-            </DraggableCalendarPost>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-bg-primary">
+      <div className="flex-1 flex items-center justify-center bg-bg-primary p-4">
         <div className="flex flex-col items-center gap-3">
           <svg className="animate-spin h-8 w-8 text-accent" fill="none" viewBox="0 0 24 24" aria-hidden>
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -695,7 +667,12 @@ export default function ContentCalendarView({ onNavigateToPost }) {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-bg-primary animate-fadeIn scrollbar-thin">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+        className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 bg-bg-primary scrollbar-thin"
+      >
       {notification && (
         <div className={`flex items-center gap-3 px-5 py-3 rounded-xl animate-fadeIn select-none ${
           notification.type === 'error' ? 'bg-danger/10 border border-danger/25' : 'bg-success/10 border border-success/25'
@@ -724,18 +701,18 @@ export default function ContentCalendarView({ onNavigateToPost }) {
         actions={
           <>
             {posts.length > 0 && (
-              <Button variant="danger" size="md" onClick={handleDeleteAll}>
+              <Button variant="danger" size="sm" onClick={handleDeleteAll}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Delete all
+                <span className="max-sm:hidden">Delete all</span>
               </Button>
             )}
-            <label className="inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-ui cursor-pointer bg-bg-tertiary text-text-primary border border-border-brand hover:border-accent/40 hover:bg-bg-elevated px-4 py-2.5 text-sm">
+            <label className="inline-flex items-center justify-center gap-1 md:gap-2 font-semibold rounded-xl transition-ui cursor-pointer bg-bg-tertiary text-text-primary border border-border-brand hover:border-accent/40 hover:bg-bg-elevated px-2 sm:px-3 md:px-4 py-2.5 text-xs md:text-sm">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              Upload CSV
+              <span className="max-sm:hidden">Upload CSV</span>
               <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
             </label>
             <ViewToggle options={VIEW_OPTIONS} value={viewMode} onChange={setViewMode} />
@@ -774,13 +751,13 @@ export default function ContentCalendarView({ onNavigateToPost }) {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Previous
+          <span className="max-sm:hidden">Previous</span>
         </Button>
-        <h3 className="text-lg font-bold text-text-primary tracking-tight">
+        <h3 className="text-sm sm:text-lg font-bold text-text-primary tracking-tight text-center">
           {MONTHS[currentMonth]} {currentYear}
         </h3>
         <Button variant="secondary" size="sm" onClick={nextMonth}>
-          Next
+          <span className="max-sm:hidden">Next</span>
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -791,14 +768,13 @@ export default function ContentCalendarView({ onNavigateToPost }) {
       {viewMode === 'table' && renderTableView()}
       {viewMode === 'card' && renderCardView()}
 
-      {renderUnscheduledIdeas()}
-
       {editModal && (
         <CalendarEditModal
           date={editModal.date}
           entry={editModal.entry}
           onClose={() => setEditModal(null)}
           onSave={handleSaveCalendarEntry}
+          onSkipToWriting={handleSkipToWriting}
         />
       )}
 
@@ -810,14 +786,20 @@ export default function ContentCalendarView({ onNavigateToPost }) {
           onEdit={() => handleEditFromDetail(detailModal)}
         />
       )}
-      </div>
+      </motion.div>
 
       <DragOverlay>
         {activeDragPost ? (
-          <div className="w-64 rounded-xl border border-accent/40 bg-bg-tertiary p-4 shadow-2xl shadow-accent/15">
+          <motion.div
+            initial={{ scale: 0.9, rotate: -2, opacity: 0 }}
+            animate={{ scale: 1, rotate: -2, opacity: 1 }}
+            exit={{ scale: 0.9, rotate: -2, opacity: 0 }}
+            transition={{ ...spring.snappy }}
+            className="w-64 rounded-xl border border-accent/40 bg-bg-tertiary p-4 shadow-2xl shadow-accent/20"
+          >
             <p className="line-clamp-2 text-sm font-semibold text-text-primary">{postTitle(activeDragPost)}</p>
             <p className="mt-2 text-xs font-medium text-accent">Drop on a date</p>
-          </div>
+          </motion.div>
         ) : null}
       </DragOverlay>
     </DndContext>
