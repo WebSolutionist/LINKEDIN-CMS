@@ -1,772 +1,722 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '../utils/supabase';
-import { suggestPillar, revampPost } from '../utils/gemini';
+import PillarBadge from './PillarBadge';
+import Button from './ui/Button';
+import PropertyPill from './ui/PropertyPill';
+import { spring, micro, stagger, staggerContainer, cardItem, toastItem } from '../utils/animations';
+import { getPostTitle } from '../utils/posts';
 
-const FORMATS = [
-  'Story Post',
-  'Educational Post',
-  'Case Study',
-  'Opinion Post',
-  'Contrarian Post',
-  'Offer Post',
+const FORMATS = ['Story Post', 'Educational Post', 'Case Study', 'Opinion Post', 'Contrarian Post', 'Offer Post'];
+const PILLARS = ['Website Reality', 'Strategic Reframe', 'Web Solution Thinking', 'Personal Reflection', 'Soft Positioning'];
+
+const SECTION_CONFIG = [
+  { key: 'seeds', label: 'Seeds', status: 'idea', color: 'text-warning', dot: 'bg-warning' },
+  { key: 'drafting', label: 'Drafting', status: 'drafting', color: 'text-accent', dot: 'bg-accent' },
+  { key: 'scheduled', label: 'Scheduled', status: 'scheduled', color: 'text-accent-purple', dot: 'bg-accent-purple' },
 ];
 
-const PILLARS = [
-  'Website Reality',
-  'Strategic Reframe',
-  'Web Solution Thinking',
-  'Personal Reflection',
-  'Soft Positioning',
-];
+const statusLabel = (status) => {
+  if (status === 'idea') return 'Seed';
+  if (status === 'drafting') return 'Drafting';
+  if (status === 'scheduled') return 'Scheduled';
+  if (status === 'published') return 'Published';
+  return status;
+};
 
-export default function WritingRoomView({ pendingRecommendation, onClearRecommendation }) {
-  const [ideas, setIdeas] = useState([]);
+const selectPillClass =
+  'appearance-none bg-bg-tertiary text-text-primary text-xs font-medium border border-border-brand/50 rounded-full pl-3 pr-8 py-1.5 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-ui cursor-pointer';
+
+const selectChevronStyle = {
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 10px center',
+};
+
+const sortPosts = (a, b) => {
+  const aOrder = a.display_order ?? 999999;
+  const bOrder = b.display_order ?? 999999;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  return new Date(b.created_at) - new Date(a.created_at);
+};
+
+function PipelineDropZone({ config, count, active, onClick }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `stage:${config.status}` });
+
+  return (
+    <motion.button
+      ref={setNodeRef}
+      type="button"
+      onClick={onClick}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      className={`w-full rounded-xl border px-3 py-3 text-left ${
+        isOver
+          ? 'border-accent bg-accent/10 shadow-lg shadow-accent/10'
+          : active
+            ? 'border-accent/50 bg-bg-tertiary'
+            : 'border-border-brand/45 bg-bg-primary/45 hover:border-accent/30 hover:bg-bg-tertiary/70'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${config.dot}`} />
+        <span className={`text-[10px] font-bold uppercase ${config.color}`}>{config.label}</span>
+        <span className="ml-auto rounded-full bg-bg-elevated px-2 py-0.5 text-[10px] font-bold text-text-secondary">
+          {count}
+        </span>
+      </div>
+    </motion.button>
+  );
+}
+
+function SeedCard({ post, onDraft, onDelete }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `post:${post.id}`,
+    data: { post },
+  });
+
+  return (
+    <motion.div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform) }}
+      whileHover={{ ...micro.hoverLift }}
+      whileTap={{ ...micro.tap }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+      className={`group rounded-xl border border-border-brand/50 bg-bg-secondary/80 p-4 shadow-sm ${
+        isDragging ? 'opacity-40 shadow-lg shadow-accent/20 scale-95' : ''
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          className="mt-0.5 shrink-0 rounded-lg border border-border-brand/50 bg-bg-primary/60 p-1.5 text-text-secondary transition-ui cursor-grab active:cursor-grabbing hover:border-accent/40 hover:text-accent"
+          title="Drag seed"
+          {...attributes}
+          {...listeners}
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
+          </svg>
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-3 text-sm font-semibold leading-relaxed text-text-primary">{getPostTitle(post)}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <PropertyPill label="Seed" dot />
+            <span className="text-xs text-text-muted">
+              {new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <Button size="sm" variant="secondary" onClick={() => onDraft(post)}>
+          Draft
+        </Button>
+        <button
+          type="button"
+          onClick={() => onDelete(post.id)}
+          className="rounded-lg p-1.5 text-text-muted opacity-0 transition-ui hover:bg-danger/10 hover:text-danger group-hover:opacity-100"
+          title="Delete seed"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+      </motion.div>
+    );
+  }
+
+function DraftListCard({ post, onSelect, onDelete }) {
+  return (
+    <motion.div
+      whileHover={{ ...micro.hoverLift }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+      className="group rounded-xl border border-border-brand/45 bg-bg-secondary/70 p-4 hover:border-accent/35 hover:bg-bg-tertiary/70"
+    >
+      <button type="button" onClick={() => onSelect(post)} className="block w-full text-left">
+        <div className="flex items-center gap-2">
+          <PropertyPill label={statusLabel(post.status)} dot />
+          {post.pillar && <PillarBadge pillar={post.pillar} size="sm" />}
+        </div>
+        <p className="mt-3 line-clamp-2 text-sm font-semibold text-text-primary">
+          {getPostTitle(post)}
+        </p>
+        {post.draft && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-text-secondary">{post.draft}</p>}
+      </button>
+      <div className="mt-4 flex items-center justify-between">
+        <Button size="sm" variant="ghost" onClick={() => onSelect(post)}>
+          Open
+        </Button>
+        <button
+          type="button"
+          onClick={() => onDelete(post.id)}
+          className="rounded-lg p-1.5 text-text-muted opacity-0 transition-ui hover:bg-danger/10 hover:text-danger group-hover:opacity-100"
+          title="Delete post"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+      </motion.div>
+    );
+  }
+
+  export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
+  const [posts, setPosts] = useState([]);
   const [activePost, setActivePost] = useState(null);
-  const [newIdeaText, setNewIdeaText] = useState('');
-  
-  // Editor States
-  const [editorStage, setEditorStage] = useState(1); // 1: Write, 2: Ready to Publish
+  const [quickIdeaText, setQuickIdeaText] = useState('');
   const [draft, setDraft] = useState('');
+  const [hookIdea, setHookIdea] = useState('');
   const [format, setFormat] = useState('');
   const [pillar, setPillar] = useState('');
-  const [thinkingAnswers, setThinkingAnswers] = useState({});
+  const [angle, setAngle] = useState('');
+  const [cta, setCta] = useState('');
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState(null);
+  const [activeBoardTab, setActiveBoardTab] = useState('idea');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [planningOpen, setPlanningOpen] = useState(false);
+  const [draggedPost, setDraggedPost] = useState(null);
+  const autoSaveTimer = useRef(null);
+  const initDone = useRef(false);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  // AI Loaders & Suggestion Storage
-  const [aiSuggestLoading, setAiSuggestLoading] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState(null); // { pillar, reason }
-  const [aiRevampLoading, setAiRevampLoading] = useState(false);
-  const [revampedText, setRevampedText] = useState('');
-  const [showRevampModal, setShowRevampModal] = useState(false);
+  const today = new Date();
+  const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-  // Publishing State
-  const [showPublishPanel, setShowPublishPanel] = useState(false);
-  const [dms, setDms] = useState(0);
-  const [publishDate, setPublishDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isPublishing, setIsPublishing] = useState(false);
+  const groupedPosts = {
+    seeds: posts.filter(p => p.status === 'idea').sort(sortPosts),
+    drafting: posts.filter(p => p.status === 'drafting').sort(sortPosts),
+    scheduled: posts.filter(p => p.status === 'scheduled').sort(sortPosts),
+  };
 
-  useEffect(() => {
-    fetchIdeas();
-  }, []);
+  const visibleBoardPosts = posts
+    .filter(p => p.status === activeBoardTab)
+    .filter(p => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return [p.raw_idea, p.hook_idea, p.draft, p.angle, p.cta, p.pillar, p.format].some(value =>
+        (value || '').toLowerCase().includes(q)
+      );
+    })
+    .sort(sortPosts);
 
-  // Apply pending recommendation if passed from Dashboard
-  useEffect(() => {
-    if (pendingRecommendation) {
-      setFormat(pendingRecommendation.format || '');
-      setPillar(pendingRecommendation.pillar || '');
-      if (onClearRecommendation) onClearRecommendation();
-    }
-  }, [pendingRecommendation]);
-
-  const fetchIdeas = async () => {
+  const fetchPosts = async () => {
     try {
       const { data, error } = await supabase
         .from('posts')
         .select('*')
-        .in('status', ['idea', 'writing'])
+        .in('status', ['idea', 'scheduled', 'drafting'])
+        .order('display_order', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: false });
-
       if (error) throw error;
-      setIdeas(data || []);
+      setPosts(data || []);
     } catch (err) {
-      console.error('Error fetching ideas:', err);
-    }
-  };
-
-  const handleAddIdea = async (e) => {
-    e.preventDefault();
-    if (!newIdeaText.trim()) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .insert({
-          raw_idea: newIdeaText.trim(),
-          status: 'idea',
-          thinking_answers: {},
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      setIdeas([data, ...ideas]);
-      setNewIdeaText('');
-      // Auto open the newly created idea in the editor
-      handleSelectPost(data);
-    } catch (err) {
-      console.error('Error adding idea:', err);
+      console.error('Error fetching posts:', err);
     }
   };
 
   const handleSelectPost = (post) => {
     setActivePost(post);
     setDraft(post.draft || '');
+    setHookIdea(post.hook_idea || '');
     setFormat(post.format || '');
     setPillar(post.pillar || '');
-    setThinkingAnswers(post.thinking_answers || {});
-    setEditorStage(1);
-    setAiSuggestion(null);
-    setShowPublishPanel(false);
+    setAngle(post.angle || '');
+    setCta(post.cta || '');
+    setPlanningOpen(Boolean(post.hook_idea || post.format || post.pillar || post.angle || post.cta));
+  };
+
+  const resetEditor = () => {
+    setActivePost(null);
+    setDraft('');
+    setHookIdea('');
+    setFormat('');
+    setPillar('');
+    setAngle('');
+    setCta('');
+    setPlanningOpen(false);
+  };
+
+  const syncPost = (updatedPost) => {
+    setPosts(prev => prev.map(p => (p.id === updatedPost.id ? updatedPost : p)));
+    setActivePost(prev => (prev?.id === updatedPost.id ? updatedPost : prev));
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .in('status', ['idea', 'scheduled', 'drafting'])
+        .order('display_order', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: false });
+      if (!error) setPosts(data || []);
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (initDone.current) return;
+    if (initialPost) {
+      const p = initialPost;
+      Promise.resolve().then(() => {
+        setActivePost(p);
+        setDraft(p.draft || '');
+        setHookIdea(p.hook_idea || '');
+        setFormat(p.format || '');
+        setPillar(p.pillar || '');
+        setAngle(p.angle || '');
+        setCta(p.cta || '');
+        setPlanningOpen(Boolean(p.hook_idea || p.format || p.pillar || p.angle || p.cta));
+      });
+    }
+    initDone.current = true;
+  }, [initialPost]);
+
+  const handleCreateSeed = async () => {
+    const idea = quickIdeaText.trim();
+    if (!idea) return;
+    setError('');
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .insert({ raw_idea: idea, status: 'idea', calendar_date: null })
+        .select()
+        .single();
+      if (error) throw error;
+      setPosts(prev => [data, ...prev]);
+      setQuickIdeaText('');
+      setActiveBoardTab('idea');
+    } catch (err) {
+      console.error('Error adding seed:', err);
+      setError(err.message || 'Failed to add seed.');
+      setTimeout(() => setError(''), 5000);
+    }
+  };
+
+  const handleQuickCaptureSubmit = async (e) => {
+    e.preventDefault();
+    await handleCreateSeed();
+  };
+
+  const handleMovePost = async (postId, nextStatus, options = {}) => {
+    const post = posts.find(p => p.id === postId);
+    if (!post) return null;
+    const patch = { status: nextStatus };
+    if (nextStatus === 'idea') patch.calendar_date = null;
+    if (nextStatus === 'drafting' && post.status === 'idea') patch.calendar_date = null;
+    if (options.select) patch.display_order = post.display_order ?? Date.now();
+
+    const optimistic = { ...post, ...patch };
+    setPosts(prev => prev.map(p => (p.id === postId ? optimistic : p)));
+    if (activePost?.id === postId) setActivePost(optimistic);
+
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .update(patch)
+        .eq('id', postId)
+        .select()
+        .single();
+      if (error) throw error;
+      syncPost(data);
+      if (options.select) handleSelectPost(data);
+      return data;
+    } catch (err) {
+      console.error('Error moving post:', err);
+      await fetchPosts();
+      setError(err.message || 'Failed to move post.');
+      setTimeout(() => setError(''), 5000);
+      return null;
+    }
+  };
+
+  const handleDraftSeed = async (post) => {
+    const moved = await handleMovePost(post.id, 'drafting', { select: true });
+    if (moved) {
+      setActiveBoardTab('drafting');
+      setToast({ message: 'Seed moved to Drafting', type: 'success' });
+      setTimeout(() => setToast(null), 2500);
+    }
   };
 
   const handleSaveDraft = async () => {
     if (!activePost) return;
-
     try {
-      const nextStatus = draft.trim() ? 'writing' : 'idea';
       const { data, error } = await supabase
         .from('posts')
-        .update({
-          draft: draft,
-          format: format,
-          pillar: pillar,
-          status: nextStatus,
-          thinking_answers: thinkingAnswers,
-        })
+        .update({ draft, hook_idea: hookIdea, format, pillar, angle, cta })
         .eq('id', activePost.id)
         .select()
         .single();
-
       if (error) throw error;
-
-      // Update local lists
-      setIdeas(ideas.map(i => i.id === data.id ? data : i));
-      setActivePost(data);
+      syncPost(data);
     } catch (err) {
       console.error('Error saving draft:', err);
     }
   };
 
-  // Auto-save draft changes when user moves off page or saves
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (activePost && (draft !== activePost.draft || format !== activePost.format || pillar !== activePost.pillar)) {
-        handleSaveDraft();
-      }
-    }, 1500); // 1.5s debounce auto-save
-
-    return () => clearTimeout(timer);
-  }, [draft, format, pillar]);
-
-  // AI ACTIONS
-  const handleAISuggestPillar = async () => {
-    if (!draft.trim()) {
-      alert('Write some draft content first so the AI can evaluate the post pillar!');
-      return;
-    }
-    setAiSuggestLoading(true);
-    setAiSuggestion(null);
-
-    try {
-      const result = await suggestPillar(draft);
-      setAiSuggestion(result);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setAiSuggestLoading(false);
-    }
-  };
-
-  const handleAcceptAISuggestion = () => {
-    if (aiSuggestion) {
-      setPillar(aiSuggestion.pillar);
-      setAiSuggestion(null);
-    }
-  };
-
-  const handleAIRevamp = async () => {
-    if (!draft.trim()) {
-      alert('Type a draft first to revamp!');
-      return;
-    }
-    setAiRevampLoading(true);
-
-    try {
-      const revamped = await revampPost(draft);
-      setRevampedText(revamped);
-      setShowRevampModal(true);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setAiRevampLoading(false);
-    }
-  };
-
-  const handleAcceptRevamp = () => {
-    setDraft(revampedText);
-    setShowRevampModal(false);
-    setRevampedText('');
-  };
-
   const handlePublish = async () => {
     if (!activePost) return;
-    setIsPublishing(true);
-
+    const postBody = draft.trim() || hookIdea.trim() || activePost.raw_idea?.trim();
+    if (!postBody) return;
     try {
-      const currentDate = new Date();
-      const oneJan = new Date(currentDate.getFullYear(), 0, 1);
-      const numberOfDays = Math.floor((currentDate - oneJan) / (24 * 60 * 60 * 1000));
-      const currentWeekNumber = Math.ceil((currentDate.getDay() + 1 + numberOfDays) / 7);
-
       const { error } = await supabase
         .from('posts')
         .update({
+          draft,
+          hook_idea: hookIdea,
+          format,
+          pillar,
+          angle,
+          cta,
           status: 'published',
-          dms: parseInt(dms) || 0,
-          week_number: currentWeekNumber,
-          published_at: new Date(publishDate).toISOString(),
+          published_at: new Date().toISOString(),
+          calendar_date: activePost.calendar_date || todayDateStr,
         })
         .eq('id', activePost.id);
-
       if (error) throw error;
 
-      setIdeas(ideas.filter(i => i.id !== activePost.id));
-      setActivePost(null);
-      setDraft('');
-      setFormat('');
-      setPillar('');
-      setShowPublishPanel(false);
+      setPosts(prev => prev.filter(i => i.id !== activePost.id));
+      resetEditor();
+      setToast({ message: `Published to ${activePost.calendar_date || todayDateStr}`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
     } catch (err) {
-      console.error('Error publishing post:', err);
-      alert('Failed to log published stats.');
-    } finally {
-      setIsPublishing(false);
+      console.error('Error publishing:', err);
+      setError(err.message || 'Failed to publish.');
+      setTimeout(() => setError(''), 5000);
     }
   };
 
-  return (
-    <div className="flex-1 flex overflow-hidden animate-fadeIn">
-      
-      {/* LEFT PANEL — Ideas Parking Lot */}
-      <div className="w-80 border-r border-[--border-color]/60 bg-[--bg-secondary]/45 shrink-0 flex flex-col h-full overflow-hidden select-none">
-        
-        {/* Parking Lot Title */}
-        <div className="p-5 border-b border-[--border-color]/50 bg-[--bg-secondary]/80 flex flex-col gap-1">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            Ideas Parking Lot
-          </h3>
-          <p className="text-[10px] text-[--text-secondary]">
-            Dump seed thoughts instantly. Write later.
-          </p>
-        </div>
+  const handleDelete = async (postId) => {
+    if (!confirm('Delete this post?')) return;
+    const previousPosts = posts;
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    if (activePost?.id === postId) resetEditor();
+    try {
+      const { error } = await supabase.from('posts').delete().eq('id', postId);
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error deleting post:', err);
+      setPosts(previousPosts);
+      setError(err.message || 'Failed to delete post.');
+      setTimeout(() => setError(''), 5000);
+    }
+  };
 
-        {/* Quick Add Form */}
-        <form onSubmit={handleAddIdea} className="p-4 border-b border-[--border-color]/40 shrink-0">
-          <div className="flex gap-2">
+  const handleDragStart = (event) => {
+    setDraggedPost(event.active.data.current?.post || null);
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    setDraggedPost(null);
+    if (!over) return;
+    const postId = String(active.id).replace('post:', '');
+    const targetStatus = String(over.id).replace('stage:', '');
+    if (!['idea', 'drafting', 'scheduled'].includes(targetStatus)) return;
+    await handleMovePost(postId, targetStatus, { select: targetStatus === 'drafting' });
+    if (targetStatus === 'drafting') setActiveBoardTab('drafting');
+    if (targetStatus === 'idea') setActiveBoardTab('idea');
+  };
+
+  useEffect(() => {
+    if (activePost) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(handleSaveDraft, 900);
+    }
+    return () => clearTimeout(autoSaveTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, hookIdea, format, pillar, angle, cta]);
+
+  const renderIdeaDump = () => (
+    <div className="flex-1 overflow-y-auto p-6 md:p-8 scrollbar-thin">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="rounded-2xl border border-border-brand/50 bg-bg-secondary/70 p-4 md:p-5">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-text-primary">Idea Dump</h2>
+              <p className="text-sm text-text-secondary">Capture raw thoughts here. They stay out of the calendar until you move them forward.</p>
+            </div>
+            <PropertyPill label={`${groupedPosts.seeds.length} seeds`} />
+          </div>
+
+          <form onSubmit={handleQuickCaptureSubmit} className="flex flex-col gap-3 sm:flex-row">
             <input
               type="text"
-              value={newIdeaText}
-              onChange={(e) => setNewIdeaText(e.target.value)}
-              placeholder="Dump a raw post seed..."
-              className="flex-1 bg-[--bg-primary] border border-[--border-color] text-xs text-white rounded-lg px-3 py-2 focus:outline-none focus:border-[--accent-primary] transition-all placeholder:text-[--text-secondary]/50"
+              value={quickIdeaText}
+              onChange={e => setQuickIdeaText(e.target.value)}
+              onBlur={handleCreateSeed}
+              placeholder="Drop a plain idea and press Enter..."
+              className="min-w-0 flex-1 rounded-xl border border-border-brand/50 bg-bg-primary px-4 py-3 text-sm text-text-primary outline-none transition-ui placeholder:text-text-secondary/50 focus:border-accent focus:ring-1 focus:ring-accent/20"
             />
-            <button
-              type="submit"
-              className="px-3 py-2 bg-[--bg-tertiary] border border-[--border-color] hover:border-[--accent-primary] text-[--accent-primary] rounded-lg transition-all hover:bg-[--accent-glow] flex items-center justify-center cursor-pointer shrink-0"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          </div>
-        </form>
-
-        {/* List of Ideas */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2.5 scrollbar-thin">
-          {ideas.length > 0 ? (
-            ideas.map((idea) => {
-              const isSelected = activePost?.id === idea.id;
-              const hasDraft = idea.draft && idea.draft.trim();
-              return (
-                <button
-                  key={idea.id}
-                  onClick={() => handleSelectPost(idea)}
-                  className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col gap-1.5 cursor-pointer relative group ${
-                    isSelected
-                      ? 'bg-[--bg-tertiary] border-[--accent-primary]/80 shadow-[0_4px_15px_rgba(0,180,216,0.04)]'
-                      : 'bg-[--bg-primary]/30 border-[--border-color]/60 hover:bg-[--bg-tertiary]/40 hover:border-[--accent-primary]/40'
-                  }`}
-                >
-                  <span className="text-xs font-bold text-white leading-snug line-clamp-2">
-                    {idea.raw_idea}
-                  </span>
-                  
-                  <div className="flex items-center gap-2 mt-1">
-                    {/* Status Badge */}
-                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded tracking-wider ${
-                      hasDraft 
-                        ? 'bg-[--accent-primary]/10 text-[--accent-primary] border border-[--accent-primary]/25'
-                        : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/25'
-                    }`}>
-                      {hasDraft ? 'Drafting' : 'Seed'}
-                    </span>
-                    <span className="text-[9px] text-[--text-secondary]">
-                      {new Date(idea.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-[--border-color]/20 rounded-2xl">
-              <svg className="w-8 h-8 text-[--text-secondary]/35 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                Parking Lot is empty
-              </span>
-              <p className="text-[9px] text-[--text-secondary]/60 max-w-[170px] mt-0.5">
-                Dump some seed post hooks at the top to park your ideas.
-              </p>
-            </div>
-          )}
+            <Button type="submit" className="shrink-0">Save Seed</Button>
+          </form>
+          {error && <p className="mt-3 text-xs font-medium text-danger">{error}</p>}
         </div>
 
-      </div>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {SECTION_CONFIG.map(config => (
+              <button
+                key={config.status}
+                type="button"
+                onClick={() => setActiveBoardTab(config.status)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-ui ${
+                  activeBoardTab === config.status
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border-brand/45 bg-bg-secondary/70 text-text-secondary hover:border-accent/30 hover:text-text-primary'
+                }`}
+              >
+                {config.label} {groupedPosts[config.key].length}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full md:w-72">
+            <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z" />
+            </svg>
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search ideas..."
+              className="w-full rounded-xl border border-border-brand/45 bg-bg-secondary/75 py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition-ui placeholder:text-text-muted focus:border-accent"
+            />
+          </div>
+        </div>
 
-      {/* RIGHT PANEL — Post Editor */}
-      <div className="flex-1 bg-[--bg-primary] flex flex-col h-full overflow-hidden relative">
-        {activePost ? (
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
-            
-            {/* Editor Header / Stage Tabs */}
-            <div className="px-8 py-4 border-b border-[--border-color]/50 bg-[--bg-secondary]/30 flex items-center justify-between shrink-0 select-none">
-              <div className="flex flex-col">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-[--accent-primary]">
-                  Active Editor Session
-                </span>
-                <span className="text-xs font-bold text-white line-clamp-1 max-w-[320px]">
-                  {activePost.raw_idea}
-                </span>
-              </div>
-
-              {/* Stage Indicators */}
-              <div className="flex gap-1.5 p-1 bg-[--bg-primary] border border-[--border-color] rounded-xl">
-                <button
-                  onClick={() => { setEditorStage(1); setShowPublishPanel(false); }}
-                  className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-                    editorStage === 1
-                      ? 'bg-[--bg-tertiary] text-white border border-[--border-color]/50'
-                      : 'text-[--text-secondary] hover:text-white'
-                  }`}
-                >
-                  1. Write
-                </button>
-                <button
-                  onClick={() => { setEditorStage(2); }}
-                  className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-                    editorStage === 2
-                      ? 'bg-[--bg-tertiary] text-white border border-[--border-color]/50'
-                      : 'text-[--text-secondary] hover:text-white'
-                  }`}
-                >
-                  2. Ready
-                </button>
-              </div>
-            </div>
-
-            {/* Stage Body Wrapper */}
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 scrollbar-thin">
-              
-              {/* STAGE 1: WRITE */}
-              {editorStage === 1 && (
-                <div className="space-y-6 animate-slideIn">
-                  
-                  {/* Strategic Formatting Controls */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    
-                    {/* Format Selector */}
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                        LinkedIn Content Format
-                      </label>
-                      <select
-                        value={format}
-                        onChange={(e) => setFormat(e.target.value)}
-                        className="w-full bg-[--bg-secondary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer"
-                      >
-                        <option value="">Select Structure</option>
-                        {FORMATS.map(f => (
-                          <option key={f} value={f}>{f}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Manual Pillar Selector */}
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                        Content Pillar Tag
-                      </label>
-                      <select
-                        value={pillar}
-                        onChange={(e) => setPillar(e.target.value)}
-                        className="w-full bg-[--bg-secondary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer"
-                      >
-                        <option value="">Select Pillar</option>
-                        {PILLARS.map(p => (
-                          <option key={p} value={p}>{p}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                  </div>
-
-                  {/* Main Writing Area */}
-                  <div className="flex flex-col gap-2 relative">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                        Write Post Draft
-                      </label>
-                      <span className="text-[10px] font-semibold text-[--text-secondary]">
-                        {draft.length.toLocaleString()} characters
-                      </span>
-                    </div>
-
-                    <textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Start drafting your LinkedIn message. Focus on direct messaging, challenge conventions..."
-                      rows={12}
-                      className="w-full bg-[--bg-secondary]/60 text-sm text-[--text-primary] border border-[--border-color] rounded-2xl p-5 focus:outline-none focus:border-[--accent-primary] focus:ring-1 focus:ring-[--accent-primary] transition-all resize-none placeholder:text-[--text-secondary]/45 font-sans leading-relaxed"
-                    />
-
-                    {/* AI Buttons Row Overlay at the bottom */}
-                    <div className="absolute right-4 bottom-4 flex gap-2">
-                      {/* Suggest Pillar */}
-                      <button
-                        onClick={handleAISuggestPillar}
-                        disabled={aiSuggestLoading || !draft.trim()}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[--bg-tertiary] hover:bg-[--border-color] border border-[--border-color] hover:border-[--accent-primary]/40 text-[10px] font-bold text-white uppercase tracking-wider rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
-                      >
-                        {aiSuggestLoading ? (
-                          <>
-                            <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            Analyzing...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-3.5 h-3.5 text-[--accent-primary]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            AI Suggest Pillar
-                          </>
-                        )}
-                      </button>
-
-                      {/* AI Revamp */}
-                      <button
-                        onClick={handleAIRevamp}
-                        disabled={aiRevampLoading || !draft.trim()}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-[10px] font-bold text-white uppercase tracking-wider rounded-lg transition-all hover:opacity-95 shadow-md disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-                      >
-                        {aiRevampLoading ? (
-                          <>
-                            <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            Revamping...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                            AI Revamp
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Suggestion Indicator Display Box */}
-                  {aiSuggestion && (
-                    <div className="p-4 bg-[--bg-secondary] border border-[--accent-primary]/25 rounded-xl flex items-start gap-3.5 animate-fadeIn">
-                      <div className="p-1 rounded-lg bg-[--accent-primary]/10 border border-[--accent-primary]/30 shrink-0">
-                        <svg className="w-5 h-5 text-[--accent-primary]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-[--accent-primary]">
-                            AI Suggestion
-                          </span>
-                          <button
-                            onClick={handleAcceptAISuggestion}
-                            className="px-2.5 py-1 bg-[--accent-primary]/15 hover:bg-[--accent-primary]/30 border border-[--accent-primary]/35 text-[9px] font-bold uppercase tracking-wider text-[--accent-primary] rounded-md transition-all cursor-pointer"
-                          >
-                            Accept Suggestion
-                          </button>
-                        </div>
-                        <p className="text-xs font-bold text-white">
-                          Pillar: {aiSuggestion.pillar}
-                        </p>
-                        <p className="text-[11px] text-[--text-secondary]">
-                          {aiSuggestion.reason}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Manual Save Indicator Button */}
-                  <div className="flex justify-between items-center pt-2">
-                    <span className="text-[10px] text-[--text-secondary]/70 font-semibold italic">
-                      Auto-saves draft changes in the background...
-                    </span>
-                    <button
-                      onClick={() => setEditorStage(2)}
-                      className="px-5 py-2.5 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
-                    >
-                      Advance to Stage 2: Ready
-                    </button>
-                  </div>
-
-                </div>
-              )}
-
-              {/* STAGE 2: READY TO PUBLISH */}
-              {editorStage === 2 && (
-                <div className="space-y-6 animate-slideIn">
-                  
-                  <div className="glass-card p-6 border border-[--border-color] space-y-5">
-                    
-                    <div className="flex items-center justify-between pb-3 border-b border-[--border-color]/40 select-none">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[--accent-primary]">
-                        Final Post Preview
-                      </span>
-                      <div className="flex gap-2">
-                        {format && (
-                          <span className="text-[9px] font-bold text-[--text-secondary] bg-[--bg-tertiary] border border-[--border-color] px-2 py-0.5 rounded-full">
-                            {format}
-                          </span>
-                        )}
-                        {pillar && (
-                          <span className="text-[9px] font-bold text-[--text-secondary] bg-[--bg-tertiary] border border-[--border-color] px-2 py-0.5 rounded-full">
-                            {pillar}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Pre-formatted Draft display */}
-                    <div className="text-sm text-[--text-primary] font-sans leading-relaxed whitespace-pre-wrap p-4 bg-[--bg-primary]/50 border border-[--border-color]/40 rounded-xl max-h-[360px] overflow-y-auto scrollbar-thin select-text selection:bg-[--accent-primary]/30 selection:text-white">
-                      {draft ? draft : <span className="text-[--text-secondary] italic">Empty Draft Content</span>}
-                    </div>
-
-                  </div>
-
-                  {/* Ready to Publish actions */}
-                  <div className="flex justify-between items-center select-none">
-                    <button
-                      onClick={() => setEditorStage(1)}
-                      className="px-4 py-2.5 text-xs font-bold text-[--text-secondary] hover:text-white uppercase tracking-wider cursor-pointer transition-colors"
-                    >
-                      Back to Editor
-                    </button>
-
-                    <button
-                      onClick={() => setShowPublishPanel(true)}
-                      disabled={!draft.trim()}
-                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg hover:shadow-[--accent-primary]/20 active:scale-95 transition-all duration-300 glow-accent cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Mark as Published
-                    </button>
-                  </div>
-
-                </div>
-              )}
-
-            </div>
-
+        {visibleBoardPosts.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border-brand/45 bg-bg-secondary/35 text-center">
+            <p className="text-sm font-semibold text-text-primary">No {statusLabel(activeBoardTab).toLowerCase()} posts here yet</p>
+            <p className="mt-1 max-w-sm text-xs text-text-secondary">Capture a seed above, or move posts between stages from the pipeline.</p>
           </div>
         ) : (
-          /* Editor Empty State */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(0,180,216,0.03),rgba(255,255,255,0))] select-none">
-            <div className="p-4 rounded-full bg-[--bg-secondary] border border-[--border-color] mb-4">
-              <svg className="w-8 h-8 text-[--accent-primary]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-              No active editor session
-            </h3>
-            <p className="text-xs text-[--text-secondary] max-w-[280px] mt-1.5 leading-relaxed">
-              Create a new draft in the Ideas Parking Lot, or select an existing parked seed card on the left to begin writing.
-            </p>
-          </div>
+          <motion.div
+            variants={staggerContainer(stagger.medium.staggerChildren, 0.35)}
+            initial="hidden"
+            animate="visible"
+            className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
+          >
+            {visibleBoardPosts.map(post => (
+              <motion.div key={post.id} variants={cardItem}>
+                {activeBoardTab === 'idea' ? (
+                  <SeedCard post={post} onDraft={handleDraftSeed} onDelete={handleDelete} />
+                ) : (
+                  <DraftListCard post={post} onSelect={handleSelectPost} onDelete={handleDelete} />
+                )}
+              </motion.div>
+            ))}
+          </motion.div>
         )}
       </div>
-
-      {/* AI REVAMP SIDE-BY-SIDE MODAL */}
-      {showRevampModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-          <div className="glass-card flex flex-col w-full max-w-4xl max-h-[90vh] bg-[--bg-secondary] border border-[--border-color] rounded-2xl shadow-2xl overflow-hidden animate-scaleIn">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[--border-color] select-none">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-                  AI Creative Revamp Audit
-                </h3>
-                <p className="text-[10px] text-[--text-secondary]">
-                  Compare the rewritten content in the Web Solutionist tone and voice
-                </p>
-              </div>
-              <button
-                onClick={() => setShowRevampModal(false)}
-                className="p-1 rounded-lg text-[--text-secondary] hover:text-white hover:bg-[--bg-tertiary] transition-all cursor-pointer"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Split Screen Body */}
-            <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[--border-color]">
-              
-              {/* Left Screen: Original */}
-              <div className="flex flex-col h-full overflow-hidden p-6 gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary] select-none">
-                  Original Writer Draft
-                </span>
-                <div className="flex-1 overflow-y-auto p-4 bg-[--bg-primary]/45 border border-[--border-color]/40 rounded-xl text-xs text-[--text-primary] font-sans leading-relaxed whitespace-pre-wrap select-text">
-                  {draft}
-                </div>
-              </div>
-
-              {/* Right Screen: AI Revamped */}
-              <div className="flex flex-col h-full overflow-hidden p-6 gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[--accent-primary] select-none">
-                  AI Optimized Draft (Challenging & Emotionally Textured)
-                </span>
-                <div className="flex-1 overflow-y-auto p-4 bg-[--bg-primary]/70 border border-[--accent-primary]/30 rounded-xl text-xs text-[--text-primary] font-sans leading-relaxed whitespace-pre-wrap selection:bg-[--accent-primary]/30 select-text">
-                  {revampedText}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 flex items-center justify-between border-t border-[--border-color] bg-[--bg-primary]/20 select-none">
-              <button
-                onClick={() => setShowRevampModal(false)}
-                className="px-4 py-2 text-xs font-bold text-[--text-secondary] hover:text-white uppercase tracking-wider transition-colors cursor-pointer"
-              >
-                Discard AI Version
-              </button>
-
-              <button
-                onClick={handleAcceptRevamp}
-                className="px-6 py-2.5 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer glow-accent"
-              >
-                Accept AI Revamp
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* READY TO PUBLISH STATISTICS SLIDEOVER PANEL / MODAL */}
-      {showPublishPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <div className="glass-card flex flex-col w-full max-w-md bg-[--bg-secondary] border border-[--border-color] rounded-2xl shadow-2xl overflow-hidden animate-scaleIn select-none">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[--border-color]">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-                  Publish Post
-                </h3>
-                <p className="text-[10px] text-[--text-secondary]">
-                  Log this post to your published archives
-                </p>
-              </div>
-              <button
-                onClick={() => setShowPublishPanel(false)}
-                className="p-1.5 rounded-lg text-[--text-secondary] hover:text-white hover:bg-[--bg-tertiary] transition-all cursor-pointer"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Form Inputs Body */}
-            <div className="p-6 space-y-4 border-b border-[--border-color]/35">
-              
-              <p className="text-[10px] text-[--text-secondary] leading-relaxed">
-                This logs the post as published. You can update impressions, comments, profile views, DMs, and audience data later in the <strong className="text-[--accent-primary]">Published Tracker</strong>.
-              </p>
-
-              {/* DMs (optional at publish) */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                  DMs Received So Far (optional)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={dms}
-                  onChange={(e) => setDms(Math.max(0, parseInt(e.target.value) || 0))}
-                  className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all"
-                />
-              </div>
-
-              {/* Publish Date */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                  Publish Date
-                </label>
-                <input
-                  type="date"
-                  value={publishDate}
-                  onChange={(e) => setPublishDate(e.target.value)}
-                  className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all [color-scheme:dark]"
-                />
-              </div>
-
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 flex items-center justify-between bg-[--bg-primary]/15">
-              <button
-                onClick={() => setShowPublishPanel(false)}
-                className="px-4 py-2 text-xs font-bold text-[--text-secondary] hover:text-white uppercase tracking-wider transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={handlePublish}
-                disabled={isPublishing}
-                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer glow-accent"
-              >
-                {isPublishing ? (
-                  <>
-                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Logging...
-                  </>
-                ) : (
-                  <>Confirm Publication</>
-                )}
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
     </div>
+  );
+
+  return (
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="relative flex h-full flex-1 overflow-hidden bg-bg-primary">
+        <aside className="hidden w-[184px] shrink-0 flex-col gap-3 border-r border-border-brand/50 bg-bg-secondary/85 p-3 md:flex">
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-purple to-accent">
+              <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase text-text-primary">Pipeline</p>
+              <p className="text-[10px] text-text-secondary">{posts.length} active</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {SECTION_CONFIG.map(config => (
+              <PipelineDropZone
+                key={config.status}
+                config={config}
+                count={groupedPosts[config.key].length}
+                active={activeBoardTab === config.status && !activePost}
+                onClick={() => {
+                  resetEditor();
+                  setActiveBoardTab(config.status);
+                }}
+              />
+            ))}
+          </div>
+
+          <div className="mt-auto rounded-xl border border-border-brand/35 bg-bg-primary/55 p-3">
+            <p className="text-[10px] leading-relaxed text-text-secondary">Drag seeds into Drafting, or open the board to work through them calmly.</p>
+          </div>
+        </aside>
+
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex shrink-0 items-center gap-2 border-b border-border-brand/40 bg-bg-secondary/30 px-4 py-2">
+            <button
+              type="button"
+              onClick={resetEditor}
+              className="flex items-center gap-1.5 rounded-lg border border-border-brand/50 bg-bg-tertiary/50 px-2.5 py-1.5 text-[10px] font-bold uppercase text-text-primary transition-ui hover:border-accent/40 hover:bg-bg-tertiary"
+            >
+              <svg className="h-3.5 w-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+              </svg>
+              Idea Dump
+            </button>
+
+            {activePost && (
+              <div className="flex min-w-0 items-center gap-2">
+                <PropertyPill label={statusLabel(activePost.status)} dot />
+                {pillar && <PillarBadge pillar={pillar} size="sm" />}
+              </div>
+            )}
+
+            <div className="ml-auto flex items-center gap-1.5">
+              {onNavigateToCalendar && (
+                <Button variant="ghost" size="sm" onClick={onNavigateToCalendar}>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Calendar
+                </Button>
+              )}
+              {activePost && (
+                <Button variant="danger" size="sm" onClick={() => handleDelete(activePost.id)}>
+                  Delete
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {activePost ? (
+            <>
+              <div className="flex-1 overflow-y-auto scrollbar-thin">
+                <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
+                  <textarea
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    placeholder={activePost.raw_idea || 'Just write. No distractions...'}
+                    className="min-h-[46vh] w-full resize-none border-0 bg-transparent font-sans text-base leading-relaxed text-text-primary outline-none placeholder:text-text-secondary/40 focus:ring-0"
+                  />
+
+                  <div className="mt-6 rounded-2xl border border-border-brand/35 bg-bg-secondary/45">
+                    <button
+                      type="button"
+                      onClick={() => setPlanningOpen(open => !open)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-ui hover:bg-bg-tertiary/35"
+                    >
+                      <div>
+                        <p className="text-sm font-bold text-text-primary">Planning fields</p>
+                        <p className="text-xs text-text-secondary">Optional hook, format, pillar, angle, and CTA.</p>
+                      </div>
+                      <svg className={`h-4 w-4 text-text-secondary transition-transform ${planningOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {planningOpen && (
+                      <div className="space-y-4 border-t border-border-brand/35 px-4 py-4">
+                        <input
+                          value={hookIdea}
+                          onChange={e => setHookIdea(e.target.value)}
+                          placeholder="Hook or topic"
+                          className="w-full rounded-xl border border-border-brand/35 bg-bg-primary/70 px-3 py-2.5 text-sm text-text-primary outline-none transition-ui placeholder:text-text-secondary/45 focus:border-accent focus:ring-1 focus:ring-accent/20"
+                        />
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select value={format} onChange={e => setFormat(e.target.value)} className={selectPillClass} style={selectChevronStyle}>
+                            <option value="">Format</option>
+                            {FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                          <select value={pillar} onChange={e => setPillar(e.target.value)} className={selectPillClass} style={selectChevronStyle}>
+                            <option value="">Pillar</option>
+                            {PILLARS.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                          {pillar && <PillarBadge pillar={pillar} />}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <input
+                            value={angle}
+                            onChange={e => setAngle(e.target.value)}
+                            placeholder="Angle"
+                            className="w-full rounded-xl border border-border-brand/35 bg-bg-primary/70 px-3 py-2 text-sm text-text-primary outline-none transition-ui placeholder:text-text-secondary/45 focus:border-accent focus:ring-1 focus:ring-accent/20"
+                          />
+                          <input
+                            value={cta}
+                            onChange={e => setCta(e.target.value)}
+                            placeholder="CTA"
+                            className="w-full rounded-xl border border-border-brand/35 bg-bg-primary/70 px-3 py-2 text-sm text-text-primary outline-none transition-ui placeholder:text-text-secondary/45 focus:border-accent focus:ring-1 focus:ring-accent/20"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-border-brand/40 bg-bg-secondary/40 px-6 py-3 md:px-10">
+                <div className="flex items-center gap-4 text-xs text-text-secondary">
+                  <span className={draft.length > 0 ? 'font-medium text-accent' : ''}>{draft.length.toLocaleString()} characters</span>
+                  <span className="hidden text-text-secondary/50 sm:inline">Auto-saves after you pause typing</span>
+                </div>
+                {activePost.status === 'published' ? (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-success bg-success/10 px-3 py-1.5 rounded-xl">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Published
+                  </span>
+                ) : (
+                  <Button onClick={handlePublish} disabled={!(draft.trim() || hookIdea.trim() || activePost.raw_idea?.trim())} size="sm">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Publish
+                  </Button>
+                )}
+              </footer>
+            </>
+          ) : renderIdeaDump()}
+        </main>
+
+        <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={toastItem.initial}
+            animate={toastItem.animate}
+            exit={toastItem.exit}
+            transition={toastItem.transition}
+            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2"
+          >
+            <div className="flex items-center gap-2 rounded-xl border border-accent/30 bg-bg-secondary px-4 py-2.5 shadow-lg">
+              <svg className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="text-xs font-semibold text-text-primary">{toast.message}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </div>
+
+      <DragOverlay>
+        {draggedPost ? (
+          <motion.div
+            initial={{ scale: 0.9, rotate: -2, opacity: 0 }}
+            animate={{ scale: 1, rotate: -2, opacity: 1 }}
+            exit={{ scale: 0.9, rotate: -2, opacity: 0 }}
+            transition={{ ...spring.snappy }}
+            className="w-64 rounded-xl border border-accent/40 bg-bg-tertiary p-4 shadow-2xl shadow-accent/20"
+          >
+            <p className="line-clamp-2 text-sm font-semibold text-text-primary">{getPostTitle(draggedPost)}</p>
+            <p className="mt-2 text-xs text-accent">Move to stage</p>
+          </motion.div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }

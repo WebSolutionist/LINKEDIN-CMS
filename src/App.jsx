@@ -1,52 +1,74 @@
-import React, { useState } from 'react';
+import { useState, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
+import ContentCalendarView from './components/ContentCalendarView';
 import WritingRoomView from './components/WritingRoomView';
 import PublishedTrackerView from './components/PublishedTrackerView';
-import WarRoomView from './components/WarRoomView';
+import { viewTransition, spring } from './utils/animations';
+
+const viewOrder = ['dashboard', 'content-calendar', 'writing-room', 'published-tracker'];
 
 export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
-  const [pendingRecommendation, setPendingRecommendation] = useState(null);
+  const [selectedPost, setSelectedPost] = useState(null);
+  const lastView = useRef('dashboard');
 
-  const handleWriteRecommendation = (rec) => {
-    setPendingRecommendation(rec);
+  const handleViewOnCalendar = () => setCurrentView('content-calendar');
+
+  const handleNavigateToPost = (post) => {
+    setSelectedPost(post || null);
     setCurrentView('writing-room');
   };
 
-  const handleClearRecommendation = () => {
-    setPendingRecommendation(null);
+  const handleBackToCalendar = () => {
+    setSelectedPost(null);
+    setCurrentView('content-calendar');
+  };
+
+  const handleSidebarNav = (view) => {
+    if (view !== 'writing-room') setSelectedPost(null);
+    lastView.current = currentView;
+    setCurrentView(view);
   };
 
   const renderActiveView = () => {
     switch (currentView) {
-      case 'dashboard':
-        return <DashboardView onWriteRecommendation={handleWriteRecommendation} />;
+      case 'dashboard': return <DashboardView onNavigateToPost={handleNavigateToPost} />;
+      case 'content-calendar': return <ContentCalendarView onNavigateToPost={handleNavigateToPost} />;
       case 'writing-room':
         return (
           <WritingRoomView
-            pendingRecommendation={pendingRecommendation}
-            onClearRecommendation={handleClearRecommendation}
+            initialPost={selectedPost}
+            onNavigateToCalendar={currentView === 'content-calendar' ? handleBackToCalendar : undefined}
           />
         );
-      case 'published-tracker':
-        return <PublishedTrackerView />;
-      case 'war-room':
-        return <WarRoomView />;
-      default:
-        return <DashboardView onWriteRecommendation={handleWriteRecommendation} />;
+      case 'published-tracker': return <PublishedTrackerView onViewOnCalendar={handleViewOnCalendar} />;
+      default: return <DashboardView />;
     }
   };
 
+  const navDirection = (viewOrder.indexOf(currentView) - viewOrder.indexOf(lastView.current)) || 1;
+
+  const vt = viewTransition(navDirection);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[--bg-primary]">
-      <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
-
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[--bg-primary] relative">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_60%_at_50%_-15%,rgba(0,180,216,0.04),rgba(255,255,255,0))] pointer-events-none" />
-
-        <div className="flex-1 flex flex-col h-full overflow-hidden z-10">
-          {renderActiveView()}
+    <div className="flex h-screen w-screen overflow-hidden app-bg">
+      <Sidebar currentView={currentView} setCurrentView={handleSidebarNav} />
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative pb-16 lg:pb-0">
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentView}
+              initial={vt.initial}
+              animate={vt.animate}
+              exit={vt.exit}
+              transition={{ ...spring.smooth }}
+              className="flex-1 flex flex-col h-full overflow-hidden"
+            >
+              {renderActiveView()}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
     </div>
