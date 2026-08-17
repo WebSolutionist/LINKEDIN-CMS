@@ -1,52 +1,86 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../utils/supabase';
+import { exportPostsToCSV } from '../utils/exportUtils';
 import PillarBadge from './PillarBadge';
 import PageHeader from './ui/PageHeader';
 import { spring, micro, cardItem, staggerContainer } from '../utils/animations';
 import { getPostTitle } from '../utils/posts';
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 export default function DashboardView({ onNavigateToPost }) {
   const [loading, setLoading] = useState(true);
-
-  const [stats, setStats] = useState({
-    publishedThisMonth: 0,
-    avgImpressions: 0,
-    topFormat: 'N/A',
-    topPillar: 'N/A',
-    streak: 0,
-  });
-
-  const [formatData, setFormatData] = useState([]);
-  const [pillarData, setPillarData] = useState([]);
-  const [monthlyPosts, setMonthlyPosts] = useState([]);
+  const [publishedPosts, setPublishedPosts] = useState([]);
+  const [selectedPeriod, setSelectedPeriod] = useState('ALL'); // 'ALL' or 'YYYY-MM'
+  
   const [formatChartType, setFormatChartType] = useState('bar');
   const [pillarChartType, setPillarChartType] = useState('bar');
   const [animatedBars, setAnimatedBars] = useState({});
 
-  const calculateMetrics = (published) => {
-    if (!published || published.length === 0) {
-      setStats({ publishedThisMonth: 0, avgImpressions: 0, topFormat: 'N/A', topPillar: 'N/A', streak: 0 });
-      setFormatData([]);
-      setPillarData([]);
-      setMonthlyPosts([]);
-      return;
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, title, raw_idea, draft, pillar, format, impressions, comments, likes, profile_views, dms, cq, icp, published_at, created_at')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false });
+      if (error) throw error;
+      setPublishedPosts(data || []);
+    } catch (err) {
+      console.error('Error fetching dashboard posts:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Available Month Periods for Filter
+  const availablePeriods = useMemo(() => {
+    const periodSet = new Set();
+    publishedPosts.forEach(p => {
+      const d = new Date(p.published_at || p.created_at);
+      if (!isNaN(d.getTime())) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        periodSet.add(key);
+      }
+    });
+    return Array.from(periodSet).sort().reverse();
+  }, [publishedPosts]);
+
+  // Filtered Posts based on Month Selection
+  const filteredPosts = useMemo(() => {
+    if (selectedPeriod === 'ALL') return publishedPosts;
+    return publishedPosts.filter(p => {
+      const d = new Date(p.published_at || p.created_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return key === selectedPeriod;
+    });
+  }, [publishedPosts, selectedPeriod]);
+
+  // Metrics Calculation for Filtered Range
+  const { stats, formatData, pillarData, sortedMonthlyPosts } = useMemo(() => {
+    if (!filteredPosts || filteredPosts.length === 0) {
+      return {
+        stats: { output: 0, avgImpressions: 0, topFormat: 'N/A', topPillar: 'N/A', streak: 0 },
+        formatData: [],
+        pillarData: [],
+        sortedMonthlyPosts: [],
+      };
     }
 
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    const monthPosts = published.filter(p => {
-      const d = new Date(p.published_at || p.created_at);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    });
-
-    const totalImpressions = published.reduce((sum, p) => sum + (p.impressions || 0), 0);
-    const avgImps = published.length ? Math.round(totalImpressions / published.length) : 0;
+    const totalImpressions = filteredPosts.reduce((sum, p) => sum + (p.impressions || 0), 0);
+    const avgImps = Math.round(totalImpressions / filteredPosts.length);
 
     const formatPerf = {};
-    published.forEach(p => {
+    filteredPosts.forEach(p => {
       if (p.format) {
         if (!formatPerf[p.format]) formatPerf[p.format] = { sum: 0, count: 0 };
         formatPerf[p.format].sum += (p.impressions || 0);
@@ -63,7 +97,7 @@ export default function DashboardView({ onNavigateToPost }) {
     });
 
     const pillarPerf = {};
-    published.forEach(p => {
+    filteredPosts.forEach(p => {
       if (p.pillar) {
         if (!pillarPerf[p.pillar]) pillarPerf[p.pillar] = { sum: 0, count: 0 };
         pillarPerf[p.pillar].sum += (p.impressions || 0);
@@ -86,44 +120,24 @@ export default function DashboardView({ onNavigateToPost }) {
     startOfWeek.setHours(0, 0, 0, 0);
 
     const postDatesThisWeek = new Set();
-    published.forEach(p => {
+    filteredPosts.forEach(p => {
       const pubDate = new Date(p.published_at || p.created_at);
       if (pubDate >= startOfWeek) postDatesThisWeek.add(pubDate.toDateString());
     });
 
-    setStats({
-      publishedThisMonth: monthPosts.length,
-      avgImpressions: avgImps,
-      topFormat: bestFormat,
-      topPillar: bestPillar,
-      streak: postDatesThisWeek.size,
-    });
-
-    setFormatData(formatList.sort((a, b) => b.value - a.value));
-    setPillarData(pillarList.sort((a, b) => b.value - a.value));
-    setMonthlyPosts(monthPosts.sort((a, b) => (b.impressions || 0) - (a.impressions || 0)));
-  };
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('status', 'published')
-        .order('published_at', { ascending: false });
-      if (error) throw error;
-      calculateMetrics(data || []);
-    } catch (err) {
-      console.error('Error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData(); // eslint-disable-line react-hooks/set-state-in-effect
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return {
+      stats: {
+        output: filteredPosts.length,
+        avgImpressions: avgImps,
+        topFormat: bestFormat,
+        topPillar: bestPillar,
+        streak: postDatesThisWeek.size,
+      },
+      formatData: formatList.sort((a, b) => b.value - a.value),
+      pillarData: pillarList.sort((a, b) => b.value - a.value),
+      sortedMonthlyPosts: [...filteredPosts].sort((a, b) => (b.impressions || 0) - (a.impressions || 0)),
+    };
+  }, [filteredPosts]);
 
   useEffect(() => {
     const allNames = [...formatData, ...pillarData].map(d => d.name);
@@ -135,6 +149,14 @@ export default function DashboardView({ onNavigateToPost }) {
     );
     return () => timeouts.forEach(clearTimeout);
   }, [formatData, pillarData]);
+
+  const handleExportReport = () => {
+    const label = selectedPeriod === 'ALL' ? 'all_time' : selectedPeriod;
+    exportPostsToCSV(filteredPosts, `linkedin_analytics_report_${label}.csv`);
+  };
+
+  const maxFormatVal = Math.max(...formatData.map(d => d.value), 1);
+  const maxPillarVal = Math.max(...pillarData.map(d => d.value), 1);
 
   const renderBarChart = (data, maxVal) => (
     <div className="space-y-3">
@@ -181,20 +203,13 @@ export default function DashboardView({ onNavigateToPost }) {
       <div className="flex items-center gap-6 animate-fadeIn">
         <div
           className="w-36 h-36 rounded-full shrink-0"
-          style={{
-            background: `conic-gradient(${conicGradient})`,
-            transition: 'transform 0.4s ease-out',
-          }}
+          style={{ background: `conic-gradient(${conicGradient})` }}
         >
           <div className="w-full h-full rounded-full animate-scaleIn" />
         </div>
         <div className="space-y-1.5">
           {segments.map(s => (
-            <div
-              key={s.name}
-              className="flex items-center gap-2 text-xs animate-slideInLeft"
-              style={{ animationDelay: `${segments.indexOf(s) * 60}ms` }}
-            >
+            <div key={s.name} className="flex items-center gap-2 text-xs">
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
               <span className="text-text-primary">{s.name}</span>
               <span className="text-accent font-bold">{(s.percent * 100).toFixed(0)}%</span>
@@ -207,116 +222,53 @@ export default function DashboardView({ onNavigateToPost }) {
 
   const renderEmptyChart = () => (
     <div className="h-48 border border-dashed border-border-brand/50 rounded-2xl flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
-      <div className="w-12 h-12 rounded-full bg-bg-tertiary border border-border-brand/50 flex items-center justify-center mb-3">
-        <svg className="w-6 h-6 text-border-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      </div>
-      <span className="text-[11px] font-semibold tracking-wide text-text-secondary mb-1">No data yet</span>
-      <p className="text-[10px] text-text-secondary/60 max-w-[200px]">Publish posts to populate analytics.</p>
+      <span className="text-[11px] font-semibold text-text-secondary mb-1">No post data for selected period</span>
+      <p className="text-[10px] text-text-secondary/60 max-w-[200px]">Publish posts or adjust your month filter.</p>
     </div>
   );
 
   const statCards = [
     {
-      label: 'Monthly Output',
-      value: stats.publishedThisMonth,
-      sub: 'Posts published this month',
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      ),
+      label: 'Published Output',
+      value: stats.output,
+      sub: selectedPeriod === 'ALL' ? 'All-time published posts' : `Posts in ${selectedPeriod}`,
     },
     {
       label: 'Avg Impressions',
       value: stats.avgImpressions.toLocaleString(),
       sub: 'Average impressions per post',
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </svg>
-      ),
     },
     {
       label: 'Dominant Format',
       value: stats.topFormat,
-      sub: 'Top performing format (avg imps)',
+      sub: 'Highest reach format',
       large: true,
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-        </svg>
-      ),
     },
     {
-      label: 'Core Pillar',
+      label: 'Top Pillar',
       value: stats.topPillar,
-      sub: 'Top performing pillar (avg imps)',
-      large: true,
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-        </svg>
-      ),
+      sub: 'Highest performing pillar',
+      isPillar: true,
     },
     {
       label: 'Active Streak',
-      value: stats.streak,
-      sub: `Posted ${stats.streak} days this week`,
-      suffix: '/ 7 days',
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
-        </svg>
-      ),
+      value: `${stats.streak}d`,
+      sub: 'Days posted this week',
     },
   ];
 
   const containerVariants = staggerContainer(0.07, 0.4);
 
-  const chartVariants = {
-    hidden: { opacity: 0, y: 24, scale: 0.98 },
-    visible: {
-      opacity: 1, y: 0, scale: 1,
-      transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
-    },
-  };
-
   if (loading) {
     return (
-      <div       className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 md:space-y-8 scrollbar-thin bg-bg-primary">
-        <div className="border-b border-border-brand/50 pb-6 select-none space-y-2">
-          <div className="h-8 w-48 skeleton" />
-          <div className="h-3 w-64 skeleton" />
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 scrollbar-thin bg-bg-primary">
+        <div className="border-b border-border-brand/50 pb-6 space-y-2">
+          <div className="h-8 w-48 skeleton rounded" />
+          <div className="h-3 w-64 skeleton rounded" />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="glass-card gradient-border-top relative p-5 border border-border-brand space-y-3">
-              <div className="h-3 w-20 skeleton" />
-              <div className="h-8 w-16 skeleton" />
-              <div className="h-2 w-32 skeleton" />
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="glass-card p-6 border border-border-brand space-y-4">
-              <div className="h-4 w-36 skeleton" />
-              <div className="space-y-3">
-                {[...Array(4)].map((_, j) => (
-                  <div key={j} className="space-y-1">
-                    <div className="flex justify-between">
-                      <div className="h-3 w-24 skeleton" />
-                      <div className="h-3 w-16 skeleton" />
-                    </div>
-                    <div className="h-3 rounded-full skeleton" />
-                  </div>
-                ))}
-              </div>
-            </div>
+            <div key={i} className="glass-card p-5 border border-border-brand h-24 skeleton rounded-2xl" />
           ))}
         </div>
       </div>
@@ -328,186 +280,186 @@ export default function DashboardView({ onNavigateToPost }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-      className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin bg-bg-primary"
+      className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 md:space-y-8 scrollbar-thin bg-bg-primary"
     >
-      <PageHeader
-        title="Content Overview"
-        subtitle="Track performance and audit your content output"
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <PageHeader
+          title="Content Overview & Past Reviews"
+          subtitle="Audit performance across months and export LinkedIn analytics reports"
+        />
 
+        {/* Month Selector & Export Controls */}
+        <div className="flex items-center gap-3 shrink-0 self-start sm:self-center">
+          <div className="flex items-center gap-2 bg-bg-secondary/60 px-3 py-1.5 rounded-xl border border-border-brand/60">
+            <span className="text-xs text-text-secondary font-medium hidden sm:inline">Review Period:</span>
+            <select
+              value={selectedPeriod}
+              onChange={e => setSelectedPeriod(e.target.value)}
+              className="bg-bg-primary text-xs text-text-primary border border-border-brand/40 rounded-lg px-2.5 py-1 focus:outline-none focus:border-accent transition-ui cursor-pointer"
+            >
+              <option value="ALL">All Time</option>
+              {availablePeriods.map(p => {
+                const [year, month] = p.split('-');
+                const monthName = MONTH_NAMES[parseInt(month, 10) - 1];
+                return (
+                  <option key={p} value={p}>
+                    {monthName} {year}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleExportReport}
+            className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-accent-purple to-accent text-white text-xs font-bold shadow-md hover:shadow-accent/20 transition-ui cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Export Report
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Stat Cards */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-5"
       >
-        {statCards.map((stat, i) => (
+        {statCards.map((card) => (
           <motion.div
-            key={i}
+            key={card.label}
             variants={cardItem}
-            whileHover={{ ...micro.hoverLift }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                className="glass-card gradient-border-top relative p-3 sm:p-5 flex flex-col gap-1 border border-border-brand group cursor-default"
-              >
-                <div className="flex items-center justify-between mb-1 sm:mb-2">
-                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-text-secondary">{stat.label}</span>
-                  <motion.div
-                    whileHover={{ ...micro.iconHover, borderColor: 'rgba(0, 180, 216, 0.4)' }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-accent/20 to-accent-deep/20 border border-accent/10 flex items-center justify-center"
-                  >
-                    <span className="text-accent scale-75 sm:scale-100">{stat.icon}</span>
-                  </motion.div>
-                </div>
-            {stat.suffix ? (
-              <div className="flex items-baseline gap-1">
-                <span className="text-3xl font-black text-text-primary group-hover:text-accent transition-colors duration-300">{stat.value}</span>
-                <span className="text-xs text-text-secondary font-semibold">{stat.suffix}</span>
-              </div>
-            ) : (
-              <span className={`font-black text-text-primary group-hover:text-accent transition-colors duration-300 ${stat.large ? 'text-lg mt-1 truncate' : 'text-3xl'}`}>
-                {stat.value}
-              </span>
-            )}
-            <span className="text-[9px] text-text-secondary mt-1">{stat.sub}</span>
+            whileHover={{ ...micro.hoverLift, borderColor: 'rgba(0, 180, 216, 0.4)' }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            className="glass-card gradient-border-top relative p-5 border border-border-brand transition-ui flex flex-col justify-between"
+          >
+            <p className="text-[11px] font-semibold tracking-wider text-text-secondary uppercase">{card.label}</p>
+            <div className="my-2">
+              {card.isPillar ? (
+                card.value !== 'N/A' ? (
+                  <PillarBadge pillar={card.value} size="lg" />
+                ) : (
+                  <span className="text-xl font-bold text-text-muted">N/A</span>
+                )
+              ) : (
+                <p className={`font-bold tracking-tight text-text-primary ${card.large ? 'text-lg line-clamp-1' : 'text-2xl font-mono'}`}>
+                  {card.value}
+                </p>
+              )}
+            </div>
+            <p className="text-[11px] text-text-muted leading-tight">{card.sub}</p>
           </motion.div>
         ))}
       </motion.div>
 
-      <motion.div
-        variants={cardItem}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 lg:grid-cols-2 gap-8"
-      >
+      {/* Analytics Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+        {/* Format Performance */}
         <motion.div
-          variants={cardItem}
-          className="glass-card p-6 border border-border-brand space-y-4"
+          whileHover={{ ...micro.hoverLift }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          className="glass-card p-6 border border-border-brand transition-ui space-y-4"
         >
-          <div className="flex items-center justify-between pb-3 border-b border-border-brand/40">
-            <h3 className="text-sm font-semibold text-text-primary">Impressions by format</h3>
-            <div className="flex gap-1 p-0.5 bg-bg-primary border border-border-brand rounded-lg">
-              <motion.button
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-text-primary">Format Performance (Avg Reach)</h3>
+            <div className="flex items-center bg-bg-primary p-1 rounded-xl border border-border-brand/40">
+              <button
+                type="button"
                 onClick={() => setFormatChartType('bar')}
-                whileTap={{ ...micro.tap }}
-                className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${formatChartType === 'bar' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-ui cursor-pointer ${
+                  formatChartType === 'bar' ? 'bg-accent/20 text-accent font-bold' : 'text-text-secondary'
+                }`}
               >
                 Bar
-              </motion.button>
-              <motion.button
+              </button>
+              <button
+                type="button"
                 onClick={() => setFormatChartType('pie')}
-                whileTap={{ ...micro.tap }}
-                className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${formatChartType === 'pie' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-ui cursor-pointer ${
+                  formatChartType === 'pie' ? 'bg-accent/20 text-accent font-bold' : 'text-text-secondary'
+                }`}
               >
                 Pie
-              </motion.button>
+              </button>
             </div>
           </div>
           {formatData.length > 0
-            ? (formatChartType === 'bar' ? renderBarChart(formatData, Math.max(...formatData.map(d => d.value)) || 100) : renderPieChart(formatData))
+            ? formatChartType === 'bar' ? renderBarChart(formatData, maxFormatVal) : renderPieChart(formatData)
             : renderEmptyChart()}
         </motion.div>
 
+        {/* Content Pillar Performance */}
         <motion.div
-          variants={cardItem}
-          className="glass-card p-6 border border-border-brand space-y-4"
+          whileHover={{ ...micro.hoverLift }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          className="glass-card p-6 border border-border-brand transition-ui space-y-4"
         >
-          <div className="flex items-center justify-between pb-3 border-b border-border-brand/40">
-            <h3 className="text-sm font-semibold text-text-primary">Impressions by pillar</h3>
-            <div className="flex gap-1 p-0.5 bg-bg-primary border border-border-brand rounded-lg">
-              <motion.button
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-text-primary">Content Pillar Distribution</h3>
+            <div className="flex items-center bg-bg-primary p-1 rounded-xl border border-border-brand/40">
+              <button
+                type="button"
                 onClick={() => setPillarChartType('bar')}
-                whileTap={{ ...micro.tap }}
-                className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${pillarChartType === 'bar' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-ui cursor-pointer ${
+                  pillarChartType === 'bar' ? 'bg-accent/20 text-accent font-bold' : 'text-text-secondary'
+                }`}
               >
                 Bar
-              </motion.button>
-              <motion.button
+              </button>
+              <button
+                type="button"
                 onClick={() => setPillarChartType('pie')}
-                whileTap={{ ...micro.tap }}
-                className={`px-3 py-1 text-[9px] font-semibold tracking-wide rounded-md transition-all cursor-pointer ${pillarChartType === 'pie' ? 'bg-bg-tertiary text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-ui cursor-pointer ${
+                  pillarChartType === 'pie' ? 'bg-accent/20 text-accent font-bold' : 'text-text-secondary'
+                }`}
               >
                 Pie
-              </motion.button>
+              </button>
             </div>
           </div>
           {pillarData.length > 0
-            ? (pillarChartType === 'bar' ? renderBarChart(pillarData, Math.max(...pillarData.map(d => d.value)) || 100) : renderPieChart(pillarData))
+            ? pillarChartType === 'bar' ? renderBarChart(pillarData, maxPillarVal) : renderPieChart(pillarData)
             : renderEmptyChart()}
         </motion.div>
-      </motion.div>
+      </div>
 
-      <motion.div
-        variants={cardItem}
-        initial="hidden"
-        animate="visible"
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-        className="glass-card p-4 sm:p-6 border border-border-brand space-y-3 sm:space-y-4"
-      >
-        <div className="flex items-center justify-between pb-3 border-b border-border-brand/40">
-          <h3 className="text-sm font-semibold text-text-primary">This month&apos;s performance</h3>
-          <span className="max-sm:hidden text-[10px] text-text-secondary font-semibold">Ranked by impressions</span>
-        </div>
+      {/* Period Post Performance Leaderboard */}
+      <div className="glass-card p-6 border border-border-brand space-y-4">
+        <h3 className="text-sm font-bold text-text-primary">
+          {selectedPeriod === 'ALL' ? 'All-Time Posts Leaderboard' : `Posts Published in ${selectedPeriod}`}
+        </h3>
 
-        {monthlyPosts.length > 0 ? (
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="space-y-2"
-          >
-            {monthlyPosts.map((post, idx) => (
-              <motion.div
+        {sortedMonthlyPosts.length > 0 ? (
+          <div className="space-y-3">
+            {sortedMonthlyPosts.map(post => (
+              <div
                 key={post.id}
-                variants={cardItem}
-                whileHover={{ x: 4 }}
-                transition={{ type: 'spring', stiffness: 350, damping: 25 }}
                 onClick={() => onNavigateToPost?.(post)}
-                className="flex items-center gap-4 p-3 rounded-xl bg-bg-primary/30 border border-border-brand/40 hover:bg-bg-tertiary/30 hover:border-accent/30 hover:glow-accent cursor-pointer"
+                className="flex items-center justify-between p-3.5 rounded-xl bg-bg-secondary/60 hover:bg-bg-tertiary border border-border-brand/40 transition-ui cursor-pointer group"
               >
-                <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-md bg-gradient-to-b from-accent-purple to-accent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center shrink-0 glow-accent">
-                  <span className="text-[11px] font-black text-white">#{idx + 1}</span>
+                <div className="flex items-center gap-3 overflow-hidden">
+                  {post.pillar && <PillarBadge pillar={post.pillar} size="sm" />}
+                  <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-ui truncate">
+                    {getPostTitle(post)}
+                  </p>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-text-primary truncate">{getPostTitle(post)}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {post.format && <span className="text-[9px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded">{post.format}</span>}
-                    <PillarBadge pillar={post.pillar} />
-                    <span className="text-[9px] text-text-secondary">
-                      {new Date(post.published_at || post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  </div>
+                <div className="flex items-center gap-4 shrink-0 text-xs tabular-nums">
+                  <span className="text-accent font-bold">{(post.impressions || 0).toLocaleString()} imps</span>
+                  <span className="text-text-secondary">{(post.likes || 0)} likes</span>
+                  <span className="text-text-secondary">{(post.comments || 0)} comments</span>
                 </div>
-                <div className="flex items-center gap-1 sm:gap-6 shrink-0">
-                  <div className="text-right">
-                    <span className="text-xs font-black text-accent">{(post.impressions || 0).toLocaleString()}</span>
-                    <span className="text-[8px] sm:text-[9px] text-text-secondary block">imps</span>
-                  </div>
-                  <div className="text-right max-sm:hidden">
-                    <span className="text-xs font-bold text-text-primary">{(post.comments || 0).toLocaleString()}</span>
-                    <span className="text-[8px] sm:text-[9px] text-text-secondary block">comments</span>
-                  </div>
-                  <div className="text-right max-sm:hidden">
-                    <span className="text-xs font-bold text-text-secondary">{(post.profile_views || 0).toLocaleString()}</span>
-                    <span className="text-[8px] sm:text-[9px] text-text-secondary block">views</span>
-                  </div>
-                </div>
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
-        ) : (
-          <div className="h-36 border border-dashed border-border-brand/40 rounded-xl flex flex-col items-center justify-center text-center animate-fadeIn">
-            <div className="w-10 h-10 rounded-full bg-bg-tertiary border border-border-brand/50 flex items-center justify-center mb-2">
-              <svg className="w-5 h-5 text-border-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <span className="text-[11px] font-semibold tracking-wide text-text-secondary">No posts this month yet</span>
-            <p className="text-[10px] text-text-secondary/60 mt-1">Publish posts to see your monthly performance.</p>
           </div>
+        ) : (
+          <p className="text-xs text-text-secondary italic">No posts recorded for this period.</p>
         )}
-      </motion.div>
+      </div>
     </motion.div>
   );
 }

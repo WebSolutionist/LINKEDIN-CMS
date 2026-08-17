@@ -8,6 +8,7 @@ import Button from './ui/Button';
 import PropertyPill from './ui/PropertyPill';
 import { spring, micro, stagger, staggerContainer, cardItem, toastItem } from '../utils/animations';
 import { getPostTitle } from '../utils/posts';
+import { generateThinkingQuestions, polishPostContent } from '../utils/gemini';
 
 const FORMATS = ['Story Post', 'Educational Post', 'Case Study', 'Opinion Post', 'Contrarian Post', 'Offer Post'];
 const PILLARS = ['Website Reality', 'Strategic Reframe', 'Web Solution Thinking', 'Personal Reflection', 'Soft Positioning'];
@@ -83,33 +84,21 @@ function SeedCard({ post, onDraft, onDelete }) {
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform) }}
       whileHover={{ ...micro.hoverLift }}
-      whileTap={{ ...micro.tap }}
       transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-      className={`group rounded-xl border border-border-brand/50 bg-bg-secondary/80 p-4 shadow-sm ${
-        isDragging ? 'opacity-40 shadow-lg shadow-accent/20 scale-95' : ''
+      className={`group relative rounded-xl border border-border-brand/45 bg-bg-secondary/70 p-4 hover:border-accent/35 hover:bg-bg-tertiary/70 ${
+        isDragging ? 'opacity-40 shadow-xl' : ''
       }`}
     >
-      <div className="flex items-start gap-3">
-        <button
-          type="button"
-          className="mt-0.5 shrink-0 rounded-lg border border-border-brand/50 bg-bg-primary/60 p-1.5 text-text-secondary transition-ui cursor-grab active:cursor-grabbing hover:border-accent/40 hover:text-accent"
-          title="Drag seed"
-          {...attributes}
-          {...listeners}
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
-          </svg>
-        </button>
-        <div className="min-w-0 flex-1">
-          <p className="line-clamp-3 text-sm font-semibold leading-relaxed text-text-primary">{getPostTitle(post)}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <PropertyPill label="Seed" dot />
-            <span className="text-xs text-text-muted">
-              {new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            </span>
-          </div>
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+        <div className="flex items-center justify-between gap-2">
+          <PropertyPill label={statusLabel(post.status)} dot />
+          <span className="text-[10px] font-medium text-text-secondary">
+            {new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
         </div>
+        <p className="mt-3 line-clamp-3 text-sm font-semibold text-text-primary">
+          {getPostTitle(post)}
+        </p>
       </div>
       <div className="mt-4 flex items-center justify-between gap-2">
         <Button size="sm" variant="secondary" onClick={() => onDraft(post)}>
@@ -126,9 +115,9 @@ function SeedCard({ post, onDraft, onDelete }) {
           </svg>
         </button>
       </div>
-      </motion.div>
-    );
-  }
+    </motion.div>
+  );
+}
 
 function DraftListCard({ post, onSelect, onDelete }) {
   return (
@@ -162,11 +151,11 @@ function DraftListCard({ post, onSelect, onDelete }) {
           </svg>
         </button>
       </div>
-      </motion.div>
-    );
-  }
+    </motion.div>
+  );
+}
 
-  export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
+export default function WritingRoomView({ initialPost, onNavigateToCalendar }) {
   const [posts, setPosts] = useState([]);
   const [activePost, setActivePost] = useState(null);
   const [quickIdeaText, setQuickIdeaText] = useState('');
@@ -178,33 +167,20 @@ function DraftListCard({ post, onSelect, onDelete }) {
   const [cta, setCta] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
-  const [activeBoardTab, setActiveBoardTab] = useState('idea');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [planningOpen, setPlanningOpen] = useState(false);
   const [draggedPost, setDraggedPost] = useState(null);
+
+  const [activeBoardTab, setActiveBoardTab] = useState('drafting');
+  const [planningOpen, setPlanningOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Link AI Assistant State
+  const [linkThinking, setLinkThinking] = useState(false);
+  const [linkAiResult, setLinkAiResult] = useState(null);
+  const [showLinkPanel, setShowLinkPanel] = useState(false);
+
   const autoSaveTimer = useRef(null);
   const initDone = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  const today = new Date();
-  const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-  const groupedPosts = {
-    seeds: posts.filter(p => p.status === 'idea').sort(sortPosts),
-    drafting: posts.filter(p => p.status === 'drafting').sort(sortPosts),
-    scheduled: posts.filter(p => p.status === 'scheduled').sort(sortPosts),
-  };
-
-  const visibleBoardPosts = posts
-    .filter(p => p.status === activeBoardTab)
-    .filter(p => {
-      const q = searchQuery.trim().toLowerCase();
-      if (!q) return true;
-      return [p.raw_idea, p.hook_idea, p.draft, p.angle, p.cta, p.pillar, p.format].some(value =>
-        (value || '').toLowerCase().includes(q)
-      );
-    })
-    .sort(sortPosts);
 
   const fetchPosts = async () => {
     try {
@@ -230,6 +206,7 @@ function DraftListCard({ post, onSelect, onDelete }) {
     setAngle(post.angle || '');
     setCta(post.cta || '');
     setPlanningOpen(Boolean(post.hook_idea || post.format || post.pillar || post.angle || post.cta));
+    setLinkAiResult(null);
   };
 
   const resetEditor = () => {
@@ -241,6 +218,7 @@ function DraftListCard({ post, onSelect, onDelete }) {
     setAngle('');
     setCta('');
     setPlanningOpen(false);
+    setLinkAiResult(null);
   };
 
   const syncPost = (updatedPost) => {
@@ -249,109 +227,121 @@ function DraftListCard({ post, onSelect, onDelete }) {
   };
 
   useEffect(() => {
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .in('status', ['idea', 'scheduled', 'drafting'])
-        .order('display_order', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: false });
-      if (!error) setPosts(data || []);
-    };
-    load();
+    fetchPosts();
   }, []);
 
   useEffect(() => {
     if (initDone.current) return;
     if (initialPost) {
-      const p = initialPost;
-      Promise.resolve().then(() => {
-        setActivePost(p);
-        setDraft(p.draft || '');
-        setHookIdea(p.hook_idea || '');
-        setFormat(p.format || '');
-        setPillar(p.pillar || '');
-        setAngle(p.angle || '');
-        setCta(p.cta || '');
-        setPlanningOpen(Boolean(p.hook_idea || p.format || p.pillar || p.angle || p.cta));
-      });
+      handleSelectPost(initialPost);
+      if (initialPost.status === 'idea') setActiveBoardTab('idea');
+      else setActiveBoardTab('drafting');
     }
     initDone.current = true;
   }, [initialPost]);
 
+  const groupedPosts = {
+    seeds: posts.filter(p => p.status === 'idea').sort(sortPosts),
+    drafting: posts.filter(p => p.status === 'drafting').sort(sortPosts),
+    scheduled: posts.filter(p => p.status === 'scheduled').sort(sortPosts),
+  };
+
+  const visibleBoardPosts = (
+    activeBoardTab === 'idea'
+      ? groupedPosts.seeds
+      : activeBoardTab === 'scheduled'
+        ? groupedPosts.scheduled
+        : groupedPosts.drafting
+  ).filter(post => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const title = getPostTitle(post).toLowerCase();
+    const raw = (post.raw_idea || '').toLowerCase();
+    return title.includes(q) || raw.includes(q);
+  });
+
   const handleCreateSeed = async () => {
-    const idea = quickIdeaText.trim();
-    if (!idea) return;
-    setError('');
+    const text = quickIdeaText.trim();
+    if (!text) return;
+    setQuickIdeaText('');
+
+    const newSeed = {
+      raw_idea: text,
+      status: 'idea',
+      display_order: groupedPosts.seeds.length,
+    };
+
     try {
       const { data, error } = await supabase
         .from('posts')
-        .insert({ raw_idea: idea, status: 'idea', calendar_date: null })
+        .insert(newSeed)
         .select()
         .single();
       if (error) throw error;
       setPosts(prev => [data, ...prev]);
-      setQuickIdeaText('');
-      setActiveBoardTab('idea');
     } catch (err) {
-      console.error('Error adding seed:', err);
-      setError(err.message || 'Failed to add seed.');
+      console.error('Error creating seed:', err);
+      setError(err.message || 'Failed to save seed.');
+      setQuickIdeaText(text);
       setTimeout(() => setError(''), 5000);
     }
   };
 
-  const handleQuickCaptureSubmit = async (e) => {
+  const handleQuickCaptureSubmit = (e) => {
     e.preventDefault();
-    await handleCreateSeed();
+    handleCreateSeed();
   };
 
-  const handleMovePost = async (postId, nextStatus, options = {}) => {
-    const post = posts.find(p => p.id === postId);
-    if (!post) return null;
-    const patch = { status: nextStatus };
-    if (nextStatus === 'idea') patch.calendar_date = null;
-    if (nextStatus === 'drafting' && post.status === 'idea') patch.calendar_date = null;
-    if (options.select) patch.display_order = post.display_order ?? Date.now();
+  const handleDraftSeed = async (post) => {
+    await handleMovePost(post.id, 'drafting', { select: true });
+    setActiveBoardTab('drafting');
+  };
 
-    const optimistic = { ...post, ...patch };
-    setPosts(prev => prev.map(p => (p.id === postId ? optimistic : p)));
-    if (activePost?.id === postId) setActivePost(optimistic);
+  const handleMovePost = async (postId, nextStatus, { select = false } = {}) => {
+    const targetPost = posts.find(p => p.id === postId);
+    if (!targetPost) return;
+
+    const previousPosts = posts;
+    const updatedPost = { ...targetPost, status: nextStatus };
+    setPosts(prev => prev.map(p => (p.id === postId ? updatedPost : p)));
+
+    if (select || activePost?.id === postId) {
+      handleSelectPost(updatedPost);
+    }
 
     try {
       const { data, error } = await supabase
         .from('posts')
-        .update(patch)
+        .update({ status: nextStatus })
         .eq('id', postId)
         .select()
         .single();
       if (error) throw error;
       syncPost(data);
-      if (options.select) handleSelectPost(data);
-      return data;
     } catch (err) {
       console.error('Error moving post:', err);
-      await fetchPosts();
-      setError(err.message || 'Failed to move post.');
+      setPosts(previousPosts);
+      setError(err.message || 'Failed to update post status.');
       setTimeout(() => setError(''), 5000);
-      return null;
-    }
-  };
-
-  const handleDraftSeed = async (post) => {
-    const moved = await handleMovePost(post.id, 'drafting', { select: true });
-    if (moved) {
-      setActiveBoardTab('drafting');
-      setToast({ message: 'Seed moved to Drafting', type: 'success' });
-      setTimeout(() => setToast(null), 2500);
     }
   };
 
   const handleSaveDraft = async () => {
     if (!activePost) return;
+
+    const payload = {
+      draft,
+      hook_idea: hookIdea,
+      format,
+      pillar,
+      angle,
+      cta,
+    };
+
     try {
       const { data, error } = await supabase
         .from('posts')
-        .update({ draft, hook_idea: hookIdea, format, pillar, angle, cta })
+        .update(payload)
         .eq('id', activePost.id)
         .select()
         .single();
@@ -362,12 +352,32 @@ function DraftListCard({ post, onSelect, onDelete }) {
     }
   };
 
+  // Trigger Link AI Assistant Thinking
+  const handleConsultLinkAssistant = async () => {
+    if (!activePost && !quickIdeaText.trim()) return;
+    const textToAnalyze = activePost?.raw_idea || activePost?.draft || quickIdeaText;
+    if (!textToAnalyze) return;
+
+    setLinkThinking(true);
+    setShowLinkPanel(true);
+    setLinkAiResult(null);
+
+    const result = await generateThinkingQuestions(textToAnalyze);
+    setLinkThinking(false);
+
+    if (result) {
+      setLinkAiResult(result);
+      if (result.recommendedFormat && !format) setFormat(result.recommendedFormat);
+      if (result.targetAudience && !icp) setIcp(result.targetAudience);
+    } else {
+      setLinkAiResult({ error: 'Link Assistant could not generate a response. Ensure your Gemini API Key is set in .env' });
+    }
+  };
+
   const handlePublish = async () => {
     if (!activePost) return;
-    const postBody = draft.trim() || hookIdea.trim() || activePost.raw_idea?.trim();
-    if (!postBody) return;
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('posts')
         .update({
           draft,
@@ -378,14 +388,15 @@ function DraftListCard({ post, onSelect, onDelete }) {
           cta,
           status: 'published',
           published_at: new Date().toISOString(),
-          calendar_date: activePost.calendar_date || todayDateStr,
         })
-        .eq('id', activePost.id);
+        .eq('id', activePost.id)
+        .select()
+        .single();
       if (error) throw error;
 
-      setPosts(prev => prev.filter(i => i.id !== activePost.id));
+      setPosts(prev => prev.filter(p => p.id !== activePost.id));
       resetEditor();
-      setToast({ message: `Published to ${activePost.calendar_date || todayDateStr}`, type: 'success' });
+      setToast({ message: 'Post published successfully!' });
       setTimeout(() => setToast(null), 3000);
     } catch (err) {
       console.error('Error publishing:', err);
@@ -432,7 +443,6 @@ function DraftListCard({ post, onSelect, onDelete }) {
       autoSaveTimer.current = setTimeout(handleSaveDraft, 900);
     }
     return () => clearTimeout(autoSaveTimer.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, hookIdea, format, pillar, angle, cta]);
 
   const renderIdeaDump = () => (
@@ -548,10 +558,6 @@ function DraftListCard({ post, onSelect, onDelete }) {
               />
             ))}
           </div>
-
-          <div className="mt-auto rounded-xl border border-border-brand/35 bg-bg-primary/55 p-3">
-            <p className="text-[10px] leading-relaxed text-text-secondary">Drag seeds into Drafting, or open the board to work through them calmly.</p>
-          </div>
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -573,6 +579,16 @@ function DraftListCard({ post, onSelect, onDelete }) {
                 {pillar && <PillarBadge pillar={pillar} size="sm" />}
               </div>
             )}
+
+            {/* Link AI Assistant Action Trigger */}
+            <button
+              type="button"
+              onClick={handleConsultLinkAssistant}
+              className="ml-2 inline-flex items-center gap-1.5 rounded-xl border border-accent-purple/40 bg-accent-purple/15 px-3 py-1.5 text-xs font-bold text-accent-purple transition-ui hover:bg-accent-purple/25 cursor-pointer"
+            >
+              <span className="h-2 w-2 rounded-full bg-accent-purple animate-ping" />
+              Link AI Copilot
+            </button>
 
             <div className="ml-auto flex items-center gap-1.5">
               {onNavigateToCalendar && (
@@ -601,6 +617,36 @@ function DraftListCard({ post, onSelect, onDelete }) {
                     placeholder={activePost.raw_idea || 'Just write. No distractions...'}
                     className="min-h-[46vh] w-full resize-none border-0 bg-transparent font-sans text-base leading-relaxed text-text-primary outline-none placeholder:text-text-secondary/40 focus:ring-0"
                   />
+
+                  {/* Link AI Panel Result Display */}
+                  {showLinkPanel && (
+                    <div className="mb-6 rounded-2xl border border-accent-purple/40 bg-accent-purple/10 p-5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-accent-purple">⚡ Link AI Copilot</span>
+                          {linkThinking && <span className="text-xs text-text-secondary animate-pulse">Thinking through post...</span>}
+                        </div>
+                        <button type="button" onClick={() => setShowLinkPanel(false)} className="text-text-secondary hover:text-text-primary text-xs">Close</button>
+                      </div>
+
+                      {linkAiResult && !linkAiResult.error && (
+                        <div className="space-y-2 text-xs text-text-primary">
+                          <div><span className="font-bold text-accent">Target Audience (ICP):</span> {linkAiResult.targetAudience}</div>
+                          <div><span className="font-bold text-accent">Emotional Goal:</span> {linkAiResult.emotionalImpact}</div>
+                          <div><span className="font-bold text-accent">Core Takeaway:</span> {linkAiResult.coreTakeaway}</div>
+                          {linkAiResult.recommendedFormat && (
+                            <div className="mt-2 pt-2 border-t border-accent-purple/20">
+                              <span className="font-bold text-accent-purple">Recommended Format:</span> {linkAiResult.recommendedFormat}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {linkAiResult?.error && (
+                        <p className="text-xs text-rose-400">{linkAiResult.error}</p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="mt-6 rounded-2xl border border-border-brand/35 bg-bg-secondary/45">
                     <button
@@ -684,23 +730,23 @@ function DraftListCard({ post, onSelect, onDelete }) {
         </main>
 
         <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={toastItem.initial}
-            animate={toastItem.animate}
-            exit={toastItem.exit}
-            transition={toastItem.transition}
-            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2"
-          >
-            <div className="flex items-center gap-2 rounded-xl border border-accent/30 bg-bg-secondary px-4 py-2.5 shadow-lg">
-              <svg className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="text-xs font-semibold text-text-primary">{toast.message}</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={toastItem.initial}
+              animate={toastItem.animate}
+              exit={toastItem.exit}
+              transition={toastItem.transition}
+              className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2"
+            >
+              <div className="flex items-center gap-2 rounded-xl border border-accent/30 bg-bg-secondary px-4 py-2.5 shadow-lg">
+                <svg className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-xs font-semibold text-text-primary">{toast.message}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <DragOverlay>

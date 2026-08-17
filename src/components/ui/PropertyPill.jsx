@@ -13,7 +13,7 @@ export default function PropertyPill({ label, dot = false, className = '' }) {
   const style = STATUS_STYLES[key] || 'bg-bg-elevated text-text-secondary border-border-brand/50';
   const dotColor = key === 'published' ? 'bg-success' : key === 'scheduled' ? 'bg-accent-purple' : key === 'drafting' ? 'bg-accent' : 'bg-warning';
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${style} ${className}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border whitespace-nowrap shrink-0 ${style} ${className}`}>
       {dot && <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${dotColor}`} />}
       {label}
     </span>
