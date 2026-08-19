@@ -1,6 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+function getAi() {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof window !== 'undefined' ? window.VITE_GEMINI_API_KEY : '');
+  if (!apiKey || apiKey === 'undefined' || apiKey === 'your-gemini-api-key-here') {
+    throw new Error('VITE_GEMINI_API_KEY is missing or invalid in environment settings.');
+  }
+  return new GoogleGenAI({ apiKey });
+}
 
 const FALLBACK_PILLAR = { pillar: 'Website Reality', reason: 'Unable to analyze draft. Defaulted to core pillar.' };
 const FALLBACK_WEEKLY_REVIEW = 'No review could be generated due to an error. Please try again.';
@@ -397,7 +403,8 @@ Be direct. 3-4 sentences max per section. Use evidence.`;
     const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
     for (const modelName of modelsToTry) {
       try {
-        const response = await ai.models.generateContent({
+        const ai = getAi();
+      const response = await ai.models.generateContent({
           model: modelName,
           contents: contentsPayload,
         });
@@ -546,6 +553,7 @@ export async function chatWithLink(messages, context) {
 
   for (const modelName of modelsToTry) {
     try {
+      const ai = getAi();
       const response = await ai.models.generateContent({
         model: modelName,
         contents: contentsPayload,
