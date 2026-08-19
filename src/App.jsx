@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import WritingRoomView from './components/WritingRoomView';
+import ContentCalendarView from './components/ContentCalendarView';
 import PublishedTrackerView from './components/PublishedTrackerView';
 import WarRoomView from './components/WarRoomView';
 
@@ -29,6 +30,8 @@ export default function App() {
             onClearRecommendation={handleClearRecommendation}
           />
         );
+      case 'calendar':
+        return <ContentCalendarView />;
       case 'published-tracker':
         return <PublishedTrackerView />;
       case 'war-room':

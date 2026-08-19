@@ -240,6 +240,38 @@ export default function DashboardView({ onWriteRecommendation }) {
       label: ICP_LABELS[key] || key,
       value: icpMap[key],
     })));
+
+    // Calculate dynamic Health Score for period
+    if (targetPosts.length > 0) {
+      const consistencyScore = Math.min(Math.round((targetPosts.length / 12) * 100), 100);
+      const avgDmsVal = targetPosts.reduce((s, p) => s + (p.dms || 0), 0) / targetPosts.length;
+      const avgViewsVal = targetPosts.reduce((s, p) => s + (p.profile_views || 0), 0) / targetPosts.length;
+      const avgQVal = targetPosts.filter(p => p.comment_quality && QUALITY_MAP[p.comment_quality])
+        .reduce((s, p) => s + QUALITY_MAP[p.comment_quality], 0) / Math.max(targetPosts.filter(p => p.comment_quality).length, 1);
+
+      const dmsNorm = Math.min((avgDmsVal / 5) * 100, 100);
+      const viewsNorm = Math.min((avgViewsVal / 500) * 100, 100);
+      const qNorm = avgQVal ? (avgQVal / 4) * 100 : 0;
+      const engagementScore = Math.round((dmsNorm * 0.4 + qNorm * 0.35 + viewsNorm * 0.25));
+
+      const uniqueFmt = new Set(targetPosts.filter(p => p.format).map(p => p.format));
+      const varietyScore = Math.round((uniqueFmt.size / 6) * 100);
+
+      const uniquePil = new Set(targetPosts.filter(p => p.pillar).map(p => p.pillar));
+      const pillarBalanceScore = Math.round((uniquePil.size / 5) * 100);
+
+      const computedPeriodScore = Math.round(
+        consistencyScore * 0.35 +
+        engagementScore * 0.35 +
+        varietyScore * 0.15 +
+        pillarBalanceScore * 0.15
+      );
+
+      setHealthScore({
+        overall_score: computedPeriodScore,
+        ai_note: `${targetPosts.length} posts analyzed for ${period === 'ALL' ? 'All Time' : period}`,
+      });
+    }
   };
 
   const calculateAndSaveHealthScore = async () => {
@@ -659,7 +691,7 @@ export default function DashboardView({ onWriteRecommendation }) {
         <div className="glass-card p-5 border border-[--border-color] rounded-2xl flex flex-col justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">ICP Pulse</span>
           <p className="text-sm font-bold text-white my-2">
-            {icpBreakdown.length > 0 ? icpBreakdown.sort((a, b) => b.value - a.value)[0]?.label : 'Untracked'}
+            {icpBreakdown.length > 0 ? (ICP_LABELS[icpBreakdown.sort((a, b) => b.value - a.value)[0]?.label] || icpBreakdown.sort((a, b) => b.value - a.value)[0]?.label || 'Untracked') : 'Untracked'}
           </p>
           <span className="text-[10px] text-[--text-secondary]">
             {icpBreakdown.length > 0 ? `${icpBreakdown.reduce((s, i) => s + i.value, 0)} total tagged` : 'Tag ICP in Published Tracker'}
