@@ -501,7 +501,13 @@ export default function DashboardView({ onNavigateToPost, onWriteRecommendation 
             </div>
 
             <div>
-              <p className={`font-bold tracking-tight text-text-primary ${card.large ? 'text-xs line-clamp-2 leading-snug' : 'text-xl'}`}>
+              <p className={`font-bold tracking-tight text-text-primary ${
+                card.value && String(card.value).length > 20
+                  ? 'text-xs line-clamp-2 leading-snug break-words'
+                  : card.large
+                    ? 'text-sm line-clamp-2 leading-snug'
+                    : 'text-xl'
+              }`}>
                 {card.value}
               </p>
               <p className="text-[10px] text-text-secondary mt-1.5 line-clamp-1">
