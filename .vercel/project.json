@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_7xY8t37nYc1YzDiKH6NbuH6Sp8qZ",
+  "orgId": "team_sbTTYSmOhb8j8Xh21rhkOP1m",
+  "projectName": "linkedin-cms",
+  "settings": {
+    "createdAt": 1780633121197,
+    "framework": "vite",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}

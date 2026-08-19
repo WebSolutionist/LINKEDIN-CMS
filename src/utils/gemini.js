@@ -5,7 +5,7 @@ const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 const FALLBACK_PILLAR = { pillar: 'Website Reality', reason: 'Unable to analyze draft. Defaulted to core pillar.' };
 const FALLBACK_WEEKLY_REVIEW = 'No review could be generated due to an error. Please try again.';
 
-export const LINK_SYSTEM_PROMPT = `You are LINK — my personal LinkedIn Growth Partner and strategist.
+const LINK_SYSTEM_PROMPT = `You are LINK — my personal LinkedIn Growth Partner and strategist.
 
 You are NOT an assistant. You are my strategist, mentor, editor, analyst, accountability coach, and growth advisor.
 
@@ -61,61 +61,6 @@ Return EXACTLY this JSON format with no additional text, markdown, or commentary
   } catch (error) {
     console.error('suggestPillar failed:', error);
     return { ...FALLBACK_PILLAR };
-  }
-}
-
-/**
- * Link AI Assistant: Generate 3 thinking questions based on a raw idea
- */
-export async function generateThinkingQuestions(rawIdea) {
-  const systemInstruction = `You are Link, Precious's personal AI Content Thinking Assistant for LinkedIn. 
-Precious is a Web Solutionist who helps founders and teams transform their web strategy.
-Given a raw, messy post idea, generate clear concise answers to these 3 thinking questions:
-1. Who is this really for? (Target Audience/ICP)
-2. What should they feel after reading? (Emotional impact)
-3. What's the one thing they should walk away knowing? (Core takeaway)
-
-Return your response strictly as valid JSON with keys:
-"targetAudience", "emotionalImpact", "coreTakeaway", "recommendedFormat", "formatReason"
-
-Format options MUST be one of:
-- "Storytelling"
-- "Thought Leadership"
-- "Strategic Reframe"
-- "Listicle"
-`;
-
-  try {
-    const prompt = `Raw Idea: "${rawIdea}"`;
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        { role: 'user', parts: [{ text: `${systemInstruction}\n\n${prompt}` }] }
-      ]
-    });
-    const resultText = response.text.trim();
-    const cleaned = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleaned);
-  } catch (err) {
-    console.error('Error in Link AI thinking:', err);
-    return null;
-  }
-}
-
-/**
- * Link AI Assistant: Refine or polish a draft hook or post
- */
-export async function polishPostContent(currentDraft, goal = 'hook') {
-  try {
-    const prompt = `${LINK_SYSTEM_PROMPT}\n\nPolishing Goal: ${goal === 'hook' ? 'Generate 3 high-converting LinkedIn hooks' : 'Polish the post for maximum readability, punchy spacing, and strong positioning.'}\n\nCurrent Content:\n${currentDraft}`;
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: prompt,
-    });
-    return response.text.trim();
-  } catch (err) {
-    console.error('polishPostContent failed:', err);
-    return currentDraft;
   }
 }
 
@@ -223,17 +168,159 @@ Provide a concise daily review covering:
 3. Weakest post this week and why.
 4. Today's highest-leverage priority.
 5. One risk or blind spot to address.
+6. Biggest opportunity right now.
 
-Be direct, concise, and structured.`;
+Be direct. 3-4 sentences max per section. Use evidence.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [
+        { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT }] },
+        { role: 'model', parts: [{ text: 'Understood. I am LINK. I will operate as described.' }] },
+        { role: 'user', parts: [{ text: prompt }] },
+      ],
     });
 
     return response.text.trim();
   } catch (error) {
     console.error('generateDailyReview failed:', error);
-    return 'Daily review failed to generate.';
+    return 'Daily review unavailable. Check your connection and try again.';
+  }
+}
+
+/**
+ * Generates 3 data-backed post recommendations.
+ */
+export async function generatePostRecommendations(posts) {
+  try {
+    const postData = posts.map((p, i) => `
+Post ${i + 1}:
+- Format: ${p.format || 'Unspecified'}
+- Pillar: ${p.pillar || 'Unspecified'}
+- Profile Views: ${p.profile_views || 0}
+- DMs: ${p.dms || 0}
+- Comment Quality: ${p.comment_quality || 'Not rated'}
+- ICP: ${p.icp_audience || 'Not tagged'}
+- Snippet: ${p.draft ? p.draft.substring(0, 100) : p.raw_idea ? p.raw_idea.substring(0, 100) : 'No content'}
+`).join('\n');
+
+    const prompt = `${LINK_SYSTEM_PROMPT}
+
+You are generating content recommendations for next week based on actual performance data. Here is the post history:
+
+${postData}
+
+Return EXACTLY this JSON array with 3 recommendation objects — no markdown, no extra text:
+[
+  {
+    "topic": "<specific post topic idea>",
+    "format": "<Story Post | Educational Post | Case Study | Opinion Post | Contrarian Post | Offer Post>",
+    "pillar": "<Website Reality | Strategic Reframe | Web Solution Thinking | Personal Reflection | Soft Positioning>",
+    "reasoning": "<one sentence why this choice is based on performance data>",
+    "confidence": "<high | medium | low>"
+  }
+]
+
+Rules:
+- Base recommendations on actual performance patterns in the data.
+- If all posts underperformed, recommend experimentation, not doubling down.
+- Vary formats and pillars — don't suggest the same combo twice.
+- Be specific with topics — no vague ideas.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [
+        { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT }] },
+        { role: 'model', parts: [{ text: 'Understood. I will generate data-backed recommendations.' }] },
+        { role: 'user', parts: [{ text: prompt }] },
+      ],
+    });
+
+    const text = response.text.trim();
+    const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    return Array.isArray(parsed) ? parsed.slice(0, 3) : [];
+  } catch (error) {
+    console.error('generatePostRecommendations failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Generates LINK's health score assessment note.
+ */
+export async function generateHealthScoreNote(healthScore, posts, weakAreas) {
+  try {
+    const weakSummary = weakAreas.length > 0
+      ? `Weak areas this week: ${weakAreas.join(', ')}.`
+      : 'All areas performing adequately.';
+
+    const postSummary = posts.map((p, i) =>
+      `${i + 1}. ${p.format || 'No format'} | ${p.pillar || 'No pillar'} | Views: ${p.profile_views || 0} | DMs: ${p.dms || 0}`
+    ).join('\n');
+
+    const prompt = `${LINK_SYSTEM_PROMPT}
+
+The Web Solutionist founder's content health score this week is ${healthScore.overall_score}/100.
+
+Breakdown:
+- Consistency: ${healthScore.consistency_score}/100
+- Engagement Quality: ${healthScore.engagement_score}/100
+- Format Variety: ${healthScore.variety_score}/100
+- Pillar Balance: ${healthScore.pillar_balance_score}/100
+
+${weakSummary}
+
+Posts this week:
+${postSummary}
+
+Write ONE honest paragraph assessing this week's health. Be direct. If the score is low, say why. If it's high but has hidden weaknesses, surface them. If it's genuinely strong, acknowledge it — but always include what to improve next.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [
+        { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT }] },
+        { role: 'model', parts: [{ text: 'Understood. I will assess honestly.' }] },
+        { role: 'user', parts: [{ text: prompt }] },
+      ],
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error('generateHealthScoreNote failed:', error);
+    return 'Health score note unavailable.';
+  }
+}
+
+/**
+ * Chat with LINK — full strategic context included.
+ */
+export async function chatWithLink(messages, context) {
+  try {
+    const contextBlock = `Current context for LINK:
+- Posts this week: ${context.weekPosts || 0}
+- Total published: ${context.totalPosts || 0}
+- Health score: ${context.healthScore || 'N/A'}/100
+- Top format: ${context.topFormat || 'N/A'}
+- Top pillar: ${context.topPillar || 'N/A'}
+- Last recommendation: ${context.lastRecommendation || 'None'}`;
+
+    const chatHistory = messages.map(m => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.message || m.text }],
+    }));
+
+    const systemMessage = { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT + '\n\n' + contextBlock }] };
+    const systemResponse = { role: 'model', parts: [{ text: 'Understood. I am LINK, loaded with current context.' }] };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [systemMessage, systemResponse, ...chatHistory],
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error('chatWithLink failed:', error);
+    return 'LINK is unavailable right now. Check your connection and try again.';
   }
 }

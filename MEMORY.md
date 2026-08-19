@@ -4,66 +4,64 @@
 - **Name**: Precious
 - **Brand**: Web Solutionist
 - **Platform**: LinkedIn content creator
+- **Growth Partner**: LINK (AI-powered LinkedIn strategist)
 
 ## Key Decisions
-- **Framework**: React 19 + Tailwind CSS v4 (Vite 8 template)
-- **AI Model**: Gemini 2.0 Flash via `@google/genai` (installed, not yet integrated into UI)
-- **Database Layer**: Supabase for real-time cloud data persistence (`@supabase/supabase-js`)
-- **Styling**: Tailwind CSS v4 using `@tailwindcss/vite` plugin
-- **Visual Aesthetic**: Premium dark-navy war room (`#061022` / `#0A1931`) with electric teal accents (`#00B4D8` / `#0077B6`), "Founder's War Room" style
-- **Font**: Inter (300–900 weights)
+- **Framework**: React + Tailwind CSS (Vite template)
+- **AI Model**: Gemini 2.0 Flash via `@google/genai`
+- **AI Persona**: LINK — direct, honest, evidence-driven LinkedIn Growth Partner
+- **Database Layer**: Supabase for real-time cloud data persistence
+- **Tailwind Version**: Tailwind CSS v4 using `@tailwindcss/vite` plugin
+- **Visual Aesthetic**: Highly premium, custom dark-navy (`#0A1931`) and bright electric teal (`#00B4D8`) "Founder's War Room" style.
 
 ## Project Status
-- [x] Project initialized (React + Tailwind + Vite)
-- [x] Supabase client configured & installed
+- [x] Project initialized (React + Tailwind)
 - [x] Gemini API client installed (`@google/genai`)
-- [x] Premium sidebar navigation (`Sidebar.jsx`) with 4 views
-- [x] Dashboard View (`DashboardView.jsx`) with SVG-based bar/pie charts, stat cards, monthly performance table
-- [x] Content Calendar (`ContentCalendarView.jsx`) with calendar/table/card views, CSV upload, drag-to-schedule, monthly insights bar
-- [x] Calendar Edit Modal (`CalendarEditModal.jsx`) for scheduling posts on specific dates
-- [x] Split-panel Writing Room (`WritingRoomView.jsx`) with ideas drawer, hook/format/pillar/angle/CTA fields, draft editor, auto-save, drag-to-reorder, publish flow
-- [x] Published Tracker (`PublishedTrackerView.jsx`) with search, performance metrics table, calendar navigation
-- [x] Edit Stats Modal (`EditStatsModal.jsx`) for inline impressions/comments/profile_views editing
-- [x] Pillar Badge (`PillarBadge.jsx`) — reusable color-coded pillar tag component
-- [x] All obsolete local storage modules and placeholder templates cleaned up
-- [x] Full build verified (Vite build successful)
+- [x] `@supabase/supabase-js` installed & initialized
+- [x] Premium sidebar navigation (`Sidebar.jsx`) implemented — 4 tabs
+- [x] **Dashboard View** — rebuilt as decision engine (What's Working, Health Score, Next 3 Posts)
+- [x] **Writing Room** — simplified publish flow (no stats at publish, just date + optional DMs)
+- [x] **Published Tracker** — 6-field edit modal (impressions, comments, profile views, DMs, comment quality, ICP)
+- [x] **Quick Log** — log spontaneous posts with optional format/pillar
+- [x] **War Room** — LINK chat interface with daily review, persistent memory, observations panel
+- [x] **LINK Persona** — 6 roles: Content Strategist, Accountability Coach, Mentor, Analyst, Advisor, Challenger
+- [x] **Health Score** — weekly composite 0-100 (consistency 35%, engagement 35%, variety 15%, pillar balance 15%)
+- [x] **Post Recommendations** — AI generates 3 data-backed post suggestions
+- [x] Cleaned up obsolete local storage modules and placeholder templates
+- [x] Verified full build compilation
 
 ## Architecture Notes
-- **4 views** managed by `App.jsx` via `currentView` state:
-  1. **Dashboard** — Performance analytics with animated bar/pie charts, KPI stat cards, monthly post ranking
-  2. **Content Calendar** — Mon/Wed/Fri posting grid with drag-to-schedule, CSV bulk import, 3 view modes (calendar/table/card), monthly insights
-  3. **Writing Room** — Ideas pipeline drawer (Seeds → Drafting → Scheduled), full post editor with auto-save, publish flow
-  4. **Published Tracker** — Searchable table of published posts with edit metrics and calendar navigation
+- The app operates across 4 strategic views (Dashboard, Writing Room, Published Tracker, War Room)
+- **Database Tables (Supabase)**:
+  - `posts`: raw seeds, active drafts, published stats, DMs, comment quality, ICP audience
+  - `weekly_reviews`: AI content audits and advisory logs
+  - `health_scores`: weekly composite 0-100 scores with LINK notes
+  - `post_recommendations`: AI-generated 3-post recommendations per week
+  - `link_sessions`: LINK's observations, daily reviews, challenges, commitments
+  - `link_chat`: conversation history with LINK
 
-- **Database Table** (`posts`):
-  - `id` (primary key), `created_at`, `raw_idea`, `hook_idea`, `draft`, `format`, `pillar`, `angle`, `cta`, `status` (idea/drafting/scheduled/published), `published_at`, `calendar_date`, `display_order`, `impressions`, `comments`, `profile_views`
+## LINK Persona
+- Identity: Senior LinkedIn Growth Partner
+- Personality: Direct, honest, analytical, strategic, evidence-driven
+- Never flatters. Never generic. Questions weak ideas.
+- 6 roles: Content Strategist, Accountability Coach, Mentor, Performance Analyst, Strategic Advisor, Challenger
 
-- **AI Layer** (`@google/genai`): Package installed. Currently scoped for future use in Weekly Reviews, Suggest Pillar, and Tone Revamping features.
+## Dashboard Answers (The 5 Questions)
+1. **What's Working** — Best format/pillar by profile visits, avg DMs, avg comment quality, ICP breakdown
+2. **What to Write Next** — AI recommendations based on actual format/pillar engagement data
+3. **Are you talking to the right people?** — ICP signal tracker per post (Founders, Students, SMBs, Service Providers, Innovators/Builders, Random)
+4. **Content Health Score** — Weekly 0-100 composite with 4 dimensions
+5. **Your Next 3 Posts** — Data-backed AI recommendations with Write This buttons
+
+## Migration Required
+- Run `supabase-migration.sql` in Supabase SQL editor to add new columns and tables
 
 ## API Configuration
 - Sourced from `.env`:
-  - `VITE_SUPABASE_URL` — Supabase project URL
-  - `VITE_SUPABASE_ANON_KEY` — Supabase anonymous key
-  - `VITE_GEMINI_API_KEY` — not currently set
-
-## Component Tree
-```
-App.jsx
-├── Sidebar.jsx (nav: Dashboard, Content Calendar, Writing Room, Published Tracker)
-└── main content area (switched by currentView)
-    ├── DashboardView.jsx
-    │   └── PillarBadge.jsx
-    ├── ContentCalendarView.jsx
-    │   ├── CalendarEditModal.jsx
-    │   ├── PostDetailModal (inline)
-    │   └── PillarBadge.jsx
-    ├── WritingRoomView.jsx
-    │   └── PillarBadge.jsx
-    └── PublishedTrackerView.jsx
-        ├── EditStatsModal.jsx
-        └── PillarBadge.jsx
-```
+  - `VITE_GEMINI_API_KEY`
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
 
 ## Session Log
-- **2026-05-28**: Initial Supabase integration. Built dark-navy brand design tokens, premium sidebar navigation, dashboard with SVG metrics charts, dual-stage post editors with auto-save, side-by-side revamp comparisons (planned), published tracker with inline metrics editing. Verified build output.
-- **2026-06-04**: Added Content Calendar view with calendar/table/card modes, CSV import, drag-and-drop scheduling, monthly insights bar, unscheduled ideas drag tray. Full rebuild with all 4 views operational. Build verified.
+- **2026-05-28**: Rebuilt CMS from scratch to implement Supabase database integration. Built brand design, dashboard, dual-stage post editor, revamp comparator.
+- **2026-07-08**: Transformed CMS into LINK Decision Engine. Added LINK persona, 4th War Room tab, content health score, performance-driven post recommendations, ICP tracking, comment quality scoring, Quick Log for spontaneous posts, simplified publish flow.
