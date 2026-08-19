@@ -388,16 +388,28 @@ Provide a concise daily review covering:
 
 Be direct. 3-4 sentences max per section. Use evidence.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT }] },
-        { role: 'model', parts: [{ text: 'Understood. I am LINK. I will operate as described.' }] },
-        { role: 'user', parts: [{ text: prompt }] },
-      ],
-    });
+    const contentsPayload = [
+      { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT }] },
+      { role: 'model', parts: [{ text: 'Understood. I am LINK. I will operate as described.' }] },
+      { role: 'user', parts: [{ text: prompt }] },
+    ];
 
-    return response.text.trim();
+    const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: contentsPayload,
+        });
+        if (response && response.text) {
+          return response.text.trim();
+        }
+      } catch (e) {
+        console.warn(`generateDailyReview failed on ${modelName}:`, e);
+      }
+    }
+
+    return 'Daily review unavailable. Please verify API key in Vercel settings.';
   } catch (error) {
     console.error('generateDailyReview failed:', error);
     return 'Daily review unavailable. Check your connection and try again.';
@@ -509,11 +521,10 @@ Write ONE honest paragraph assessing this week's health. Be direct. If the score
 }
 
 /**
- * Chat with LINK — full strategic context included.
+ * Chat with LINK — full strategic context included with model fallbacks.
  */
 export async function chatWithLink(messages, context) {
-  try {
-    const contextBlock = `Current context for LINK:
+  const contextBlock = `Current context for LINK:
 - Posts this week: ${context.weekPosts || 0}
 - Total published: ${context.totalPosts || 0}
 - Health score: ${context.healthScore || 'N/A'}/100
@@ -521,22 +532,34 @@ export async function chatWithLink(messages, context) {
 - Top pillar: ${context.topPillar || 'N/A'}
 - Last recommendation: ${context.lastRecommendation || 'None'}`;
 
-    const chatHistory = messages.map(m => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.message || m.text }],
-    }));
+  const chatHistory = messages.map(m => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.message || m.text }],
+  }));
 
-    const systemMessage = { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT + '\n\n' + contextBlock }] };
-    const systemResponse = { role: 'model', parts: [{ text: 'Understood. I am LINK, loaded with current context.' }] };
+  const systemMessage = { role: 'user', parts: [{ text: LINK_SYSTEM_PROMPT + '\n\n' + contextBlock }] };
+  const systemResponse = { role: 'model', parts: [{ text: 'Understood. I am LINK, loaded with current context.' }] };
+  const contentsPayload = [systemMessage, systemResponse, ...chatHistory];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [systemMessage, systemResponse, ...chatHistory],
-    });
+  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+  let lastError = null;
 
-    return response.text.trim();
-  } catch (error) {
-    console.error('chatWithLink failed:', error);
-    return 'LINK is unavailable right now. Check your connection and try again.';
+  for (const modelName of modelsToTry) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: contentsPayload,
+      });
+      if (response && response.text) {
+        return response.text.trim();
+      }
+    } catch (err) {
+      console.warn(`chatWithLink failed on model ${modelName}:`, err);
+      lastError = err;
+    }
   }
+
+  const errMsg = lastError?.message || lastError?.toString() || 'Unknown error';
+  console.error('chatWithLink completely failed:', lastError);
+  return `LINK is currently experiencing an API issue (${errMsg}). Please check VITE_GEMINI_API_KEY setting.`;
 }
