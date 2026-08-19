@@ -1,61 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase';
+import { getPostTitle } from '../utils/posts';
+import PageHeader from './ui/PageHeader';
+import PropertyPill from './ui/PropertyPill';
+import PillarBadge from './PillarBadge';
+import EditStatsModal from './EditStatsModal';
 
-const PILLAR_COLORS = {
-  'Website Reality': 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25',
-  'Strategic Reframe': 'bg-amber-500/10 text-amber-400 border border-amber-500/25',
-  'Web Solution Thinking': 'bg-blue-500/10 text-blue-400 border border-blue-500/25',
-  'Personal Reflection': 'bg-pink-500/10 text-pink-400 border border-pink-500/25',
-  'Soft Positioning': 'bg-violet-500/10 text-violet-400 border border-violet-500/25',
-};
-
-const COMMENT_QUALITY_OPTIONS = [
-  { value: '', label: 'Not rated' },
-  { value: 'surface', label: 'Surface (Likes only)' },
-  { value: 'basic', label: 'Basic (Shallow discussion)' },
-  { value: 'engaged', label: 'Engaged (Good discussion)' },
-  { value: 'deep', label: 'Deep (Meaningful conversation)' },
-];
-
-const ICP_OPTIONS = [
-  { value: '', label: 'Not tagged' },
-  { value: 'founders', label: 'Founders' },
-  { value: 'students', label: 'Students' },
-  { value: 'smbs', label: 'SMBs' },
-  { value: 'service_providers', label: 'Service Providers' },
-  { value: 'innovators_builders', label: 'Innovators/Builders' },
-  { value: 'random', label: 'Random' },
-];
-
-export default function PublishedTrackerView() {
+export default function PublishedTrackerView({ onViewOnCalendar }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Edit modal
   const [editingPost, setEditingPost] = useState(null);
-  const [impressions, setImpressions] = useState(0);
-  const [comments, setComments] = useState(0);
-  const [profileViews, setProfileViews] = useState(0);
-  const [dms, setDms] = useState(0);
-  const [commentQuality, setCommentQuality] = useState('');
-  const [icpAudience, setIcpAudience] = useState('');
-  const [saveLoading, setSaveLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Quick Log modal
-  const [showQuickLog, setShowQuickLog] = useState(false);
-  const [quickLogText, setQuickLogText] = useState('');
-  const [quickLogFormat, setQuickLogFormat] = useState('');
-  const [quickLogPillar, setQuickLogPillar] = useState('');
-  const [quickLogDate, setQuickLogDate] = useState(new Date().toISOString().split('T')[0]);
-  const [quickLogLoading, setQuickLogLoading] = useState(false);
-
-  // Filters
-  const [filterText, setFilterText] = useState('');
-  const [filterIcp, setFilterIcp] = useState('');
-
-  useEffect(() => {
-    fetchPublishedPosts();
-  }, []);
+  const handleSaveStats = async (postId, metrics) => {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .update(metrics)
+        .eq('id', postId)
+        .select()
+        .single();
+      if (error) throw error;
+      setPosts(posts.map(p => p.id === data.id ? data : p));
+    } catch (err) {
+      console.error('Error saving stats:', err);
+    }
+  };
 
   const fetchPublishedPosts = async () => {
     setLoading(true);
@@ -65,7 +35,6 @@ export default function PublishedTrackerView() {
         .select('*')
         .eq('status', 'published')
         .order('published_at', { ascending: false });
-
       if (error) throw error;
       setPosts(data || []);
     } catch (err) {
@@ -75,300 +44,188 @@ export default function PublishedTrackerView() {
     }
   };
 
-  const handleOpenEdit = (post) => {
-    setEditingPost(post);
-    setImpressions(post.impressions || 0);
-    setComments(post.comments || 0);
-    setProfileViews(post.profile_views || 0);
-    setDms(post.dms || 0);
-    setCommentQuality(post.comment_quality || '');
-    setIcpAudience(post.icp_audience || '');
-  };
+  useEffect(() => { fetchPublishedPosts(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, []);
 
-  const handleSaveStats = async () => {
-    if (!editingPost) return;
-    setSaveLoading(true);
-
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .update({
-          impressions: parseInt(impressions) || 0,
-          comments: parseInt(comments) || 0,
-          profile_views: parseInt(profileViews) || 0,
-          dms: parseInt(dms) || 0,
-          comment_quality: commentQuality || null,
-          icp_audience: icpAudience || null,
-        })
-        .eq('id', editingPost.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setPosts(posts.map(p => p.id === data.id ? data : p));
-      setEditingPost(null);
-    } catch (err) {
-      console.error('Error saving stats:', err);
-      alert('Failed to update stats.');
-    } finally {
-      setSaveLoading(false);
-    }
-  };
-
-  const handleQuickLog = async (e) => {
-    e.preventDefault();
-    if (!quickLogText.trim()) return;
-    setQuickLogLoading(true);
-
-    try {
-      const currentDate = new Date();
-      const oneJan = new Date(currentDate.getFullYear(), 0, 1);
-      const numberOfDays = Math.floor((currentDate - oneJan) / (24 * 60 * 60 * 1000));
-      const currentWeekNumber = Math.ceil((currentDate.getDay() + 1 + numberOfDays) / 7);
-
-      const { data, error } = await supabase
-        .from('posts')
-        .insert({
-          raw_idea: quickLogText.trim(),
-          status: 'published',
-          format: quickLogFormat || null,
-          pillar: quickLogPillar || null,
-          draft: quickLogText.trim(),
-          published_at: new Date(quickLogDate).toISOString(),
-          week_number: currentWeekNumber,
-          impressions: 0,
-          comments: 0,
-          profile_views: 0,
-          dms: 0,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setPosts([data, ...posts]);
-      setShowQuickLog(false);
-      resetQuickLog();
-    } catch (err) {
-      console.error('Error logging quick post:', err);
-      alert('Failed to log post.');
-    } finally {
-      setQuickLogLoading(false);
-    }
-  };
-
-  const resetQuickLog = () => {
-    setQuickLogText('');
-    setQuickLogFormat('');
-    setQuickLogPillar('');
-    setQuickLogDate(new Date().toISOString().split('T')[0]);
-  };
-
-  const getPostTitle = (draft) => {
-    if (!draft) return 'Untitled Post';
-    const lines = draft.split('\n');
-    const firstLine = lines.find(line => line.trim().length > 0);
-    if (!firstLine) return 'Untitled Post';
-    return firstLine.length > 60 ? firstLine.substring(0, 60) + '...' : firstLine;
-  };
-
-  const getQualityLabel = (val) => {
-    const opt = COMMENT_QUALITY_OPTIONS.find(o => o.value === val);
-    return opt ? opt.label : 'Not rated';
-  };
-
-  const getIcpLabel = (val) => {
-    const opt = ICP_OPTIONS.find(o => o.value === val);
-    return opt ? opt.label : 'Not tagged';
-  };
-
-  // Filter logic
-  const filteredPosts = posts.filter(p => {
-    if (filterText && !getPostTitle(p.draft).toLowerCase().includes(filterText.toLowerCase())) return false;
-    if (filterIcp && p.icp_audience !== filterIcp) return false;
-    return true;
+  const filteredPosts = posts.filter(post => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const title = getPostTitle(post).toLowerCase();
+    const raw = (post.raw_idea || '').toLowerCase();
+    return title.includes(q) || raw.includes(q);
   });
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[--bg-primary]">
-        <div className="flex flex-col items-center gap-3">
-          <svg className="animate-spin h-8 w-8 text-[--accent-primary]" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          <span className="text-xs text-[--text-secondary] font-semibold tracking-wider uppercase">
-            Fetching archives...
-          </span>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 bg-bg-primary scrollbar-thin">
+        <div className="pb-6 border-b border-border-brand/40 space-y-2">
+          <div className="h-8 w-56 skeleton" />
+          <div className="h-4 w-72 skeleton" />
+        </div>
+        <div className="h-11 max-w-md skeleton rounded-xl" />
+        <div className="glass-card overflow-hidden">
+          <div className="border-b border-border-brand/40 px-6 py-3 flex gap-8">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-3 w-16 skeleton" />
+            ))}
+          </div>
+          <div className="divide-y divide-border-brand/30">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex items-center gap-6 px-6 py-4">
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-3/5 skeleton" />
+                  <div className="h-2.5 w-2/5 skeleton" />
+                </div>
+                <div className="flex gap-8">
+                  <div className="h-3 w-14 skeleton" />
+                  <div className="h-3 w-14 skeleton" />
+                  <div className="h-3 w-14 skeleton" />
+                  <div className="h-3 w-14 skeleton" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 space-y-6 animate-fadeIn scrollbar-thin">
-      <div className="flex items-center justify-between border-b border-[--border-color]/50 pb-5 select-none">
-        <div>
-          <h2 className="text-2xl font-black tracking-wide text-white uppercase">
-            Published Tracker
-          </h2>
-          <p className="text-xs text-[--text-secondary]">
-            Audit your live performance history, log engagement quality, and tag audience signals
-          </p>
-        </div>
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 space-y-6 bg-bg-primary animate-fadeIn scrollbar-thin">
+      <PageHeader
+        title="Published Tracker"
+        subtitle="Audit live performance and update metrics"
+      />
 
-        <button
-          onClick={() => setShowQuickLog(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg hover:shadow-[--accent-primary]/20 active:scale-95 transition-all duration-300 glow-accent cursor-pointer shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-          </svg>
-          Quick Log
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-xs">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[--text-secondary]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      <div className="w-full max-w-md">
+        <div className="glass-card rounded-xl flex items-center gap-2 px-3 py-1">
+          <svg
+            className="w-4 h-4 shrink-0 text-text-secondary pointer-events-none"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
           </svg>
           <input
             type="text"
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            placeholder="Search posts..."
-            className="w-full bg-[--bg-secondary] text-xs text-white border border-[--border-color] rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:border-[--accent-primary] transition-all placeholder:text-[--text-secondary]/50"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search posts by title..."
+            className="flex-1 bg-transparent border-0 rounded-xl py-2 text-sm text-text-primary placeholder:text-text-secondary/60 focus:outline-none focus:ring-0"
           />
         </div>
-        <select
-          value={filterIcp}
-          onChange={(e) => setFilterIcp(e.target.value)}
-          className="bg-[--bg-secondary] text-xs text-white border border-[--border-color] rounded-xl px-3 py-2.5 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer"
-        >
-          <option value="">All ICP</option>
-          {ICP_OPTIONS.filter(o => o.value).map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        <span className="text-[10px] text-[--text-secondary] font-semibold">
-          {filteredPosts.length} post{filteredPosts.length !== 1 ? 's' : ''}
-        </span>
       </div>
 
       {filteredPosts.length > 0 ? (
-        <div className="glass-card border border-[--border-color] overflow-hidden">
+        <div className="glass-card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse select-none">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-[--border-color] bg-[--bg-secondary]/80 text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                  <th className="px-4 py-4">Post Title</th>
-                  <th className="px-4 py-4">Format</th>
-                  <th className="px-4 py-4">Pillar</th>
-                  <th className="px-4 py-4 text-center">Impressions</th>
-                  <th className="px-4 py-4 text-center">Comments</th>
-                  <th className="px-4 py-4 text-center">Profile Views</th>
-                  <th className="px-4 py-4 text-center">DMs</th>
-                  <th className="px-4 py-4 text-center">Comment Quality</th>
-                  <th className="px-4 py-4 text-center">ICP Audience</th>
-                  <th className="px-4 py-4">Published</th>
-                  <th className="px-4 py-4 text-right">Actions</th>
+                <tr className="border-b border-border-brand/50 bg-bg-secondary/50 text-xs font-medium text-text-secondary">
+                  <th className="px-6 py-3.5 font-normal">Post title</th>
+                  <th className="px-6 py-3.5 font-normal">Format</th>
+                  <th className="px-6 py-3.5 font-normal">Pillar</th>
+                  <th className="px-6 py-3.5 font-normal text-center">Impressions</th>
+                  <th className="px-6 py-3.5 font-normal text-center">Comments</th>
+                  <th className="px-6 py-3.5 font-normal text-center">Likes</th>
+                  <th className="px-6 py-3.5 font-normal text-center">Profile views</th>
+                  <th className="px-6 py-3.5 font-normal">Published</th>
+                  <th className="px-6 py-3.5 font-normal text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[--border-color]/40 text-xs font-medium text-[--text-primary]">
-                {filteredPosts.map((post) => (
-                  <tr key={post.id} className="hover:bg-[--bg-tertiary]/35 transition-colors group">
-                    <td className="px-4 py-4.5 max-w-[220px]">
-                      <p className="font-bold text-white line-clamp-1 group-hover:text-[--accent-primary] transition-colors leading-tight">
-                        {getPostTitle(post.draft)}
+              <tbody className="divide-y divide-border-brand/40 text-sm text-text-primary">
+                {filteredPosts.map(post => (
+                  <tr
+                    key={post.id}
+                    className="group hover:bg-bg-tertiary/40 transition-ui cursor-default"
+                  >
+                    <td className="px-6 py-4 max-w-[280px]">
+                      <p className="font-semibold text-text-primary line-clamp-1 group-hover:text-accent transition-ui leading-snug">
+                        {getPostTitle(post)}
                       </p>
-                      <p className="text-[9px] text-[--text-secondary] mt-0.5 line-clamp-1 max-w-[200px] italic">
-                        {post.raw_idea}
-                      </p>
+                      {post.raw_idea && (
+                        <p className="text-xs text-text-secondary mt-0.5 line-clamp-1 max-w-[260px] italic">
+                          {post.raw_idea}
+                        </p>
+                      )}
                     </td>
-
-                    <td className="px-4 py-4.5 whitespace-nowrap">
+                    <td className="px-6 py-4">
                       {post.format ? (
-                        <span className="inline-flex items-center rounded-md bg-[--bg-primary] border border-[--border-color] px-2.5 py-0.5 text-[10px] font-semibold text-[--text-secondary] whitespace-nowrap shrink-0">
-                          {post.format}
-                        </span>
+                        <PropertyPill label={post.format} />
                       ) : (
-                        <span className="text-[10px] text-[--text-secondary]/50 font-semibold uppercase">—</span>
+                        <span className="text-xs text-text-secondary/60">None</span>
                       )}
                     </td>
-
-                    <td className="px-4 py-4.5 whitespace-nowrap">
-                      {post.pillar ? (
-                        <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-[10px] font-semibold whitespace-nowrap shrink-0 ${
-                          PILLAR_COLORS[post.pillar] || 'bg-gray-500/10 text-gray-400'
-                        }`}>
-                          {post.pillar}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-[--text-secondary]/50 font-semibold uppercase">—</span>
-                      )}
+                    <td className="px-6 py-4">
+                      <PillarBadge pillar={post.pillar} />
                     </td>
-
-                    <td className="px-4 py-4.5 text-center font-bold text-[--accent-primary]">
+                    <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
                       {(post.impressions || 0).toLocaleString()}
                     </td>
-
-                    <td className="px-4 py-4.5 text-center font-bold text-white">
+                    <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
                       {(post.comments || 0).toLocaleString()}
                     </td>
-
-                    <td className="px-4 py-4.5 text-center font-bold text-[--text-secondary]">
+                    <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
+                      {(post.likes || 0).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 text-center font-semibold tabular-nums text-accent">
                       {(post.profile_views || 0).toLocaleString()}
                     </td>
-
-                    <td className="px-4 py-4.5 text-center font-bold text-amber-400">
-                      {(post.dms || 0).toLocaleString()}
+                    <td className="px-6 py-4 text-xs text-text-secondary tabular-nums">
+                      {new Date(post.published_at || post.created_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
                     </td>
-
-                    <td className="px-4 py-4.5 text-center">
-                      {post.comment_quality ? (
-                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold ${
-                          post.comment_quality === 'deep' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' :
-                          post.comment_quality === 'engaged' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/25' :
-                          post.comment_quality === 'basic' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/25' :
-                          'bg-gray-500/10 text-gray-400 border border-gray-500/25'
-                        }`}>
-                          {getQualityLabel(post.comment_quality)}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-[--text-secondary]/50 font-semibold">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-4.5 text-center">
-                      {post.icp_audience ? (
-                        <span className="inline-flex items-center rounded-md bg-violet-500/10 text-violet-400 border border-violet-500/25 px-2 py-0.5 text-[10px] font-semibold">
-                          {getIcpLabel(post.icp_audience)}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-[--text-secondary]/50 font-semibold">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-4.5 text-[10px] text-[--text-secondary] font-semibold whitespace-nowrap">
-                      {post.published_at
-                        ? new Date(post.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        : new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </td>
-
-                    <td className="px-4 py-4.5 text-right">
-                      <button
-                        onClick={() => handleOpenEdit(post)}
-                        className="p-2 bg-[--bg-primary] hover:bg-[--accent-glow] border border-[--border-color] hover:border-[--accent-primary]/60 text-[--text-secondary] hover:text-[--accent-primary] rounded-xl transition-all cursor-pointer inline-flex items-center justify-center"
-                        title="Edit Performance Stats"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                      </button>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {post.calendar_date && (
+                          <button
+                            type="button"
+                            onClick={() => onViewOnCalendar?.(post.calendar_date)}
+                            className="p-2 bg-bg-primary border border-border-brand text-text-secondary hover:border-accent/50 hover:text-accent rounded-xl transition-ui cursor-pointer inline-flex items-center justify-center"
+                            title="View on Calendar"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setEditingPost(post)}
+                          className="p-2 bg-bg-primary border border-border-brand text-text-secondary hover:border-accent/50 hover:text-accent rounded-xl transition-ui cursor-pointer inline-flex items-center justify-center"
+                          title="Edit Performance Stats"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -377,213 +234,47 @@ export default function PublishedTrackerView() {
           </div>
         </div>
       ) : (
-        <div className="h-64 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-[--border-color]/35 rounded-2xl select-none">
-          <div className="p-4 rounded-full bg-[--bg-secondary] border border-[--border-color] mb-4">
-            <svg className="w-8 h-8 text-[--accent-primary]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+        <div className="glass-card flex flex-col items-center justify-center text-center px-8 py-16 animate-fadeIn">
+          <div className="relative mb-5">
+            <div className="w-16 h-16 rounded-full bg-bg-secondary border border-border-brand flex items-center justify-center">
+              <svg
+                className="w-8 h-8 text-text-secondary/50"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent/15 border border-accent/30 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
           </div>
-          <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-            No published posts tracked yet
+          <h3 className="text-sm font-semibold text-text-primary">
+            {searchQuery ? 'No matching posts found' : 'No published posts tracked yet'}
           </h3>
-          <p className="text-xs text-[--text-secondary] max-w-[280px] mt-1.5 leading-relaxed">
-            Publish posts from the Writing Room or use Quick Log to capture spontaneous posts.
+          <p className="text-sm text-text-secondary max-w-sm mt-2 leading-relaxed">
+            {searchQuery
+              ? 'Try adjusting your search query.'
+              : 'Publish content from the Writing Room to build your analytical database.'}
           </p>
         </div>
       )}
 
-      {/* EDIT PERFORMANCE MODAL */}
       {editingPost && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <div className="glass-card flex flex-col w-full max-w-lg bg-[--bg-secondary] border border-[--border-color] rounded-2xl shadow-2xl overflow-hidden animate-scaleIn select-none">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[--border-color]">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-                  Update Performance Metrics
-                </h3>
-                <p className="text-[10px] text-[--text-secondary] mt-0.5 line-clamp-1 max-w-[360px]">
-                  Post: "{getPostTitle(editingPost.draft)}"
-                </p>
-              </div>
-              <button
-                onClick={() => setEditingPost(null)}
-                className="p-1.5 rounded-lg text-[--text-secondary] hover:text-white hover:bg-[--bg-tertiary] transition-all cursor-pointer"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="overflow-y-auto max-h-[60vh] p-6 space-y-4 border-b border-[--border-color]/35">
-              {/* Row 1: Vanity Metrics */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Impressions</label>
-                  <input type="number" min="0" value={impressions} onChange={(e) => setImpressions(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Comments</label>
-                  <input type="number" min="0" value={comments} onChange={(e) => setComments(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Profile Views</label>
-                  <input type="number" min="0" value={profileViews} onChange={(e) => setProfileViews(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all" />
-                </div>
-              </div>
-
-              {/* Row 2: Decision Metrics */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">DMs Received</label>
-                  <input type="number" min="0" value={dms} onChange={(e) => setDms(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Comment Quality</label>
-                  <select value={commentQuality} onChange={(e) => setCommentQuality(e.target.value)}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer">
-                    {COMMENT_QUALITY_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">ICP Audience</label>
-                  <select value={icpAudience} onChange={(e) => setIcpAudience(e.target.value)}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer">
-                    {ICP_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 flex items-center justify-between bg-[--bg-primary]/15">
-              <button onClick={() => setEditingPost(null)}
-                className="px-4 py-2 text-xs font-bold text-[--text-secondary] hover:text-white uppercase tracking-wider transition-colors cursor-pointer">
-                Cancel
-              </button>
-              <button onClick={handleSaveStats} disabled={saveLoading}
-                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer glow-accent">
-                {saveLoading ? (
-                  <>
-                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  <>Save Metrics</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK LOG MODAL */}
-      {showQuickLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <div className="glass-card flex flex-col w-full max-w-lg bg-[--bg-secondary] border border-[--border-color] rounded-2xl shadow-2xl overflow-hidden animate-scaleIn">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[--border-color]">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-                  Quick Log Spontaneous Post
-                </h3>
-                <p className="text-[10px] text-[--text-secondary]">
-                  Log a post you published outside the CMS
-                </p>
-              </div>
-              <button onClick={() => { setShowQuickLog(false); resetQuickLog(); }}
-                className="p-1.5 rounded-lg text-[--text-secondary] hover:text-white hover:bg-[--bg-tertiary] transition-all cursor-pointer">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickLog} className="p-6 space-y-4 border-b border-[--border-color]/35">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                  Post Title or Full Text <span className="text-[--accent-primary]">*</span>
-                </label>
-                <textarea
-                  value={quickLogText}
-                  onChange={(e) => setQuickLogText(e.target.value)}
-                  placeholder="Paste the post title or full content..."
-                  rows={3}
-                  className="w-full bg-[--bg-primary] text-xs text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all resize-none placeholder:text-[--text-secondary]/50"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Format (optional)</label>
-                  <select value={quickLogFormat} onChange={(e) => setQuickLogFormat(e.target.value)}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer">
-                    <option value="">—</option>
-                    <option value="Story Post">Story Post</option>
-                    <option value="Educational Post">Educational Post</option>
-                    <option value="Case Study">Case Study</option>
-                    <option value="Opinion Post">Opinion Post</option>
-                    <option value="Contrarian Post">Contrarian Post</option>
-                    <option value="Offer Post">Offer Post</option>
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Pillar (optional)</label>
-                  <select value={quickLogPillar} onChange={(e) => setQuickLogPillar(e.target.value)}
-                    className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all cursor-pointer">
-                    <option value="">—</option>
-                    <option value="Website Reality">Website Reality</option>
-                    <option value="Strategic Reframe">Strategic Reframe</option>
-                    <option value="Web Solution Thinking">Web Solution Thinking</option>
-                    <option value="Personal Reflection">Personal Reflection</option>
-                    <option value="Soft Positioning">Soft Positioning</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">Publish Date</label>
-                <input
-                  type="date"
-                  value={quickLogDate}
-                  onChange={(e) => setQuickLogDate(e.target.value)}
-                  className="w-full bg-[--bg-primary] text-xs font-semibold text-white border border-[--border-color] rounded-xl p-3 focus:outline-none focus:border-[--accent-primary] transition-all [color-scheme:dark]"
-                />
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <button type="button" onClick={() => { setShowQuickLog(false); resetQuickLog(); }}
-                  className="px-4 py-2 text-xs font-bold text-[--text-secondary] hover:text-white uppercase tracking-wider transition-colors cursor-pointer">
-                  Cancel
-                </button>
-                <button type="submit" disabled={quickLogLoading || !quickLogText.trim()}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer glow-accent disabled:opacity-40 disabled:pointer-events-none">
-                  {quickLogLoading ? (
-                    <>
-                      <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Logging...
-                    </>
-                  ) : (
-                    <>Log Post</>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <EditStatsModal
+          post={editingPost}
+          onClose={() => setEditingPost(null)}
+          onSave={handleSaveStats}
+        />
       )}
     </div>
   );
