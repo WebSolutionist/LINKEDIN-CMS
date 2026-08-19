@@ -164,7 +164,20 @@ export default function DashboardView({ onNavigateToPost, onWriteRecommendation 
       }
     });
     const topIcpKey = Object.keys(icpMap).sort((a, b) => icpMap[b] - icpMap[a])[0];
-    const topIcpLabel = topIcpKey ? (ICP_LABELS[topIcpKey] || topIcpKey) : 'Untracked';
+    let topIcpLabel = 'Untracked';
+    if (topIcpKey) {
+      try {
+        if (topIcpKey.startsWith('{') || topIcpKey.startsWith('"')) {
+          const parsed = JSON.parse(topIcpKey);
+          const firstKey = typeof parsed === 'object' ? Object.keys(parsed)[0] : parsed;
+          topIcpLabel = ICP_LABELS[firstKey] || firstKey || 'Untracked';
+        } else {
+          topIcpLabel = ICP_LABELS[topIcpKey] || topIcpKey;
+        }
+      } catch {
+        topIcpLabel = ICP_LABELS[topIcpKey] || topIcpKey;
+      }
+    }
 
     // Calculate Health Score
     let computedHealthScore = 0;

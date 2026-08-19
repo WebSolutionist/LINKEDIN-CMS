@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../utils/supabase';
 import { generateDailyReview, chatWithLink } from '../utils/gemini';
+import { spring, micro, staggerContainer, cardItem } from '../utils/animations';
 
 export default function WarRoomView() {
   const [posts, setPosts] = useState([]);
@@ -35,7 +37,6 @@ export default function WarRoomView() {
       const weekNumber = getWeekInfo();
       setCurrentWeekNumber(weekNumber);
 
-      // Fetch all published posts
       const { data: postsData } = await supabase
         .from('posts')
         .select('*')
@@ -45,7 +46,6 @@ export default function WarRoomView() {
       const allPosts = postsData || [];
       setPosts(allPosts);
 
-      // Get this week's posts
       const weekStart = new Date();
       const day = weekStart.getDay();
       const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
@@ -61,7 +61,6 @@ export default function WarRoomView() {
       });
       setWeekPosts(thisWeek);
 
-      // Load chat history for this week
       const { data: chatData } = await supabase
         .from('link_chat')
         .select('*')
@@ -72,7 +71,6 @@ export default function WarRoomView() {
         setChatMessages(chatData.map(c => ({ role: c.role, message: c.message })));
       }
 
-      // Load active sessions
       const { data: sessionsData } = await supabase
         .from('link_sessions')
         .select('*')
@@ -83,7 +81,6 @@ export default function WarRoomView() {
         setActiveSessions(sessionsData.filter(s => s.session_type !== 'chat'));
       }
 
-      // Check for existing daily review
       const { data: existingReview } = await supabase
         .from('link_sessions')
         .select('*')
@@ -96,7 +93,6 @@ export default function WarRoomView() {
         setDailyReview(existingReview[0].link_notes?.review || null);
         setReviewLoading(false);
       } else if (allPosts.length > 0) {
-        // Generate daily review
         generateAndSaveDailyReview(allPosts, thisWeek, weekNumber);
       } else {
         setReviewLoading(false);
@@ -134,19 +130,16 @@ export default function WarRoomView() {
     setInputText('');
     setSending(true);
 
-    // Optimistically add user message
     const newMessages = [...chatMessages, { role: 'user', message: userMessage }];
     setChatMessages(newMessages);
 
     try {
-      // Save user message to DB
       await supabase.from('link_chat').insert({
         role: 'user',
         message: userMessage,
         week_number: currentWeekNumber,
       });
 
-      // Build context
       const topFormat = posts.length > 0 ? getTopFormat() : 'N/A';
       const topPillar = posts.length > 0 ? getTopPillar() : 'N/A';
 
@@ -159,10 +152,8 @@ export default function WarRoomView() {
         lastRecommendation: 'None',
       };
 
-      // Get LINK response
       const linkResponse = await chatWithLink(newMessages, context);
 
-      // Save LINK response to DB
       await supabase.from('link_chat').insert({
         role: 'link',
         message: linkResponse,
@@ -215,119 +206,138 @@ export default function WarRoomView() {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden animate-fadeIn">
+    <div className="flex-1 flex overflow-hidden bg-bg-primary">
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header */}
-        <div className="px-8 py-4 border-b border-[--border-color]/50 bg-[--bg-secondary]/30 shrink-0 select-none">
-          <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-[--accent-primary] animate-pulse shadow-[0_0_8px_var(--accent-primary)]" />
-            <h2 className="text-lg font-black tracking-wide text-white uppercase">
-              War Room
-            </h2>
+        {/* Sleek Header */}
+        <div className="px-6 py-4 border-b border-border-brand/50 bg-bg-secondary/60 backdrop-blur-xl flex items-center justify-between shrink-0 select-none">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center font-black text-white text-sm shadow-lg glow-purple">
+                L
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-bg-primary" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-text-primary">LINK Strategy Hub</h2>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25">
+                  Strategist & Copilot
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary">
+                Direct strategic feedback & performance debriefs for Wallah Precious
+              </p>
+            </div>
           </div>
-          <p className="text-[10px] text-[--text-secondary] mt-0.5">
-            Your LinkedIn Growth Partner — LINK is online
-          </p>
         </div>
 
-        {/* Daily Review Banner */}
+        {/* Daily Review Card */}
         {reviewLoading ? (
-          <div className="px-8 py-4 bg-[--bg-tertiary]/30 border-b border-[--border-color]/30 flex items-center gap-3">
-            <svg className="animate-spin h-4 w-4 text-[--accent-primary]" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            <span className="text-xs text-[--text-secondary] font-semibold">LINK is analyzing your week...</span>
+          <div className="mx-6 mt-4 p-4 rounded-2xl glass-card border border-border-brand flex items-center gap-3">
+            <div className="w-4 h-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+            <span className="text-xs text-text-secondary font-semibold">LINK is analyzing your strategic metrics...</span>
           </div>
         ) : dailyReview ? (
-          <div className="px-8 py-4 bg-gradient-to-r from-[--bg-tertiary]/50 to-transparent border-b border-[--border-color]/30">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[--accent-primary] to-[--accent-secondary] flex items-center justify-center font-bold text-xs text-white shadow-lg shrink-0 mt-0.5">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-6 mt-4 p-5 rounded-2xl glass-card border border-accent/30 bg-gradient-to-r from-accent-purple/10 via-bg-secondary to-bg-tertiary relative overflow-hidden"
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center font-bold text-xs text-white shadow-lg shrink-0 mt-0.5">
                 L
               </div>
               <div className="flex-1 min-w-0">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[--accent-primary]">
-                  Daily Review
-                </span>
-                <div className="text-xs text-[--text-primary] leading-relaxed mt-1 whitespace-pre-line">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-accent">
+                    Strategic Daily Debrief
+                  </span>
+                  <button
+                    onClick={() => generateAndSaveDailyReview(posts, weekPosts, currentWeekNumber)}
+                    className="text-xs font-semibold text-text-secondary hover:text-accent flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+                <div className="text-xs text-text-primary leading-relaxed mt-2 whitespace-pre-line font-normal">
                   {dailyReview}
                 </div>
               </div>
-              <button
-                onClick={() => generateAndSaveDailyReview(posts, weekPosts, currentWeekNumber)}
-                className="shrink-0 p-2 bg-[--bg-primary] hover:bg-[--accent-glow] border border-[--border-color] hover:border-[--accent-primary]/60 text-[--text-secondary] hover:text-[--accent-primary] rounded-lg transition-all cursor-pointer"
-                title="Refresh Daily Review"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
             </div>
-          </div>
+          </motion.div>
         ) : null}
 
         {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
           {chatMessages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center select-none">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[--accent-primary] to-[--accent-secondary] flex items-center justify-center font-black text-2xl text-white shadow-lg mb-4">
+            <div className="h-full flex flex-col items-center justify-center text-center select-none py-12">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center font-black text-2xl text-white shadow-xl glow-purple mb-4">
                 L
               </div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                LINK is Ready
+              <h3 className="text-base font-bold text-text-primary">
+                LINK Strategy Room Active
               </h3>
-              <p className="text-xs text-[--text-secondary] max-w-[340px] mt-2 leading-relaxed">
-                Ask me anything about your content strategy, performance, or what to post next. I'll give you the honest answer based on your data.
+              <p className="text-xs text-text-secondary max-w-sm mt-1.5 leading-relaxed">
+                Direct strategic advice based on your profile visits, DMs, format rotation, and 3 core content pillars.
               </p>
-              <div className="grid grid-cols-2 gap-2 mt-6 max-w-[400px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-6 max-w-lg w-full">
                 {[
-                  "What's my best performing format?",
-                  "Why did my last post underperform?",
-                  "What should I write about today?",
-                  "How's my consistency this week?",
+                  "What's my highest converting post format for DMs?",
+                  "Analyze my format rotation for this week.",
+                  "Give me 3 data-backed post concepts for tomorrow.",
+                  "How is my profile visits signal performing?",
                 ].map(q => (
                   <button
                     key={q}
                     onClick={() => { setInputText(q); }}
-                    className="text-left p-3 bg-[--bg-secondary] border border-[--border-color] hover:border-[--accent-primary]/40 rounded-xl text-[10px] text-[--text-secondary] hover:text-white transition-all cursor-pointer"
+                    className="text-left p-3.5 glass-card border border-border-brand hover:border-accent/50 rounded-xl text-xs text-text-secondary hover:text-text-primary transition-all cursor-pointer group"
                   >
-                    {q}
+                    <span className="group-hover:text-accent transition-colors font-medium">"{q}"</span>
                   </button>
                 ))}
               </div>
             </div>
           ) : (
             chatMessages.map((msg, idx) => (
-              <div key={idx} className={`flex items-start gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow-lg shrink-0 ${
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className={`flex items-start gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+              >
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs text-white shadow-md shrink-0 ${
                   msg.role === 'link'
-                    ? 'bg-gradient-to-br from-[--accent-primary] to-[--accent-secondary]'
-                    : 'bg-[--bg-tertiary] border border-[--border-color]'
+                    ? 'bg-gradient-to-br from-accent-purple to-accent glow-purple'
+                    : 'bg-bg-tertiary border border-border-brand text-text-primary'
                 }`}>
                   {msg.role === 'link' ? 'L' : 'P'}
                 </div>
-                <div className={`max-w-[75%] px-4 py-3 rounded-2xl text-xs leading-relaxed ${
+                <div className={`max-w-[78%] p-4 rounded-2xl text-xs leading-relaxed ${
                   msg.role === 'link'
-                    ? 'bg-[--bg-secondary] border border-[--border-color] text-[--text-primary]'
-                    : 'bg-gradient-to-r from-[--accent-primary]/20 to-[--accent-secondary]/20 border border-[--accent-primary]/20 text-white'
+                    ? 'glass-card border border-border-brand text-text-primary'
+                    : 'bg-gradient-to-r from-accent-purple/20 to-accent/20 border border-accent/30 text-white font-medium shadow-md'
                 }`}>
                   <div className="whitespace-pre-line">{msg.message}</div>
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
 
           {sending && (
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[--accent-primary] to-[--accent-secondary] flex items-center justify-center font-bold text-xs text-white shadow-lg shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-accent-purple to-accent flex items-center justify-center font-bold text-xs text-white shadow-md shrink-0">
                 L
               </div>
-              <div className="px-4 py-3 rounded-2xl bg-[--bg-secondary] border border-[--border-color]">
+              <div className="p-4 rounded-2xl glass-card border border-border-brand">
                 <div className="flex gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[--accent-primary] animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 rounded-full bg-[--accent-primary] animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 rounded-full bg-[--accent-primary] animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             </div>
@@ -336,93 +346,92 @@ export default function WarRoomView() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Chat Input */}
-        <div className="shrink-0 px-8 py-4 border-t border-[--border-color]/50 bg-[--bg-secondary]/30">
-          <form onSubmit={handleSendMessage} className="flex gap-3">
+        {/* Input Bar */}
+        <div className="shrink-0 p-4 border-t border-border-brand/50 bg-bg-secondary/60 backdrop-blur-xl">
+          <form onSubmit={handleSendMessage} className="flex items-center gap-3">
             <input
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Ask LINK anything..."
+              placeholder="Ask LINK for strategic direction..."
               disabled={sending}
-              className="flex-1 bg-[--bg-primary] border border-[--border-color] text-xs text-white rounded-xl px-4 py-3 focus:outline-none focus:border-[--accent-primary] transition-all placeholder:text-[--text-secondary]/50 disabled:opacity-40"
+              className="flex-1 bg-bg-primary border border-border-brand text-xs text-text-primary rounded-xl px-4 py-3 focus:outline-none focus:border-accent transition-all placeholder:text-text-secondary/50 disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!inputText.trim() || sending}
-              className="px-5 py-3 bg-gradient-to-r from-[--accent-primary] to-[--accent-secondary] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all hover:opacity-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer glow-accent"
+              className="px-5 py-3 bg-gradient-to-r from-accent-purple to-accent text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer shrink-0"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
+              Send
             </button>
           </form>
         </div>
       </div>
 
-      {/* Right Sidebar — Active Challenges & Sessions */}
-      <div className="w-72 border-l border-[--border-color]/60 bg-[--bg-secondary]/45 shrink-0 flex flex-col h-full overflow-hidden hidden lg:flex">
-        <div className="p-5 border-b border-[--border-color]/50">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            LINK's Observations
+      {/* Right Sidebar — Observations & Performance Snapshot */}
+      <div className="w-80 border-l border-border-brand/50 bg-bg-secondary/40 shrink-0 flex flex-col h-full overflow-hidden hidden xl:flex">
+        <div className="p-5 border-b border-border-brand/50">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
+            LINK Observations
           </h3>
-          <p className="text-[9px] text-[--text-secondary] mt-0.5">
-            Weekly insights and challenges
+          <p className="text-[10px] text-text-secondary mt-0.5">
+            Real-time strategic feedback & challenges
           </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
           {activeSessions.length > 0 ? (
             activeSessions.slice(0, 5).map(session => (
-              <div key={session.id} className="p-3 rounded-xl bg-[--bg-primary]/40 border border-[--border-color]/60 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                    session.session_type === 'challenge' ? 'bg-red-500/10 text-red-400 border border-red-500/25' :
-                    'bg-[--accent-primary]/10 text-[--accent-primary] border border-[--accent-primary]/25'
+              <div key={session.id} className="p-3.5 rounded-xl glass-card border border-border-brand space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    session.session_type === 'challenge'
+                      ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      : 'bg-accent/15 text-accent border border-accent/30'
                   }`}>
                     {session.session_type === 'challenge' ? 'Challenge' : 'Insight'}
                   </span>
-                  <span className="text-[8px] text-[--text-secondary]">
+                  <span className="text-[10px] text-text-secondary">
                     {new Date(session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </span>
                 </div>
-                <p className="text-[10px] text-[--text-secondary] leading-relaxed">
+                <p className="text-xs text-text-secondary leading-relaxed">
                   {session.link_notes?.summary || session.link_notes?.review?.substring(0, 120) || 'No details'}
                 </p>
               </div>
             ))
           ) : (
-            <div className="flex flex-col items-center justify-center text-center p-4 h-40 border border-dashed border-[--border-color]/30 rounded-xl">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
-                No observations yet
+            <div className="flex flex-col items-center justify-center text-center p-6 border border-dashed border-border-brand/40 rounded-2xl">
+              <span className="text-xs font-bold text-text-secondary">
+                No active challenges
               </span>
-              <p className="text-[9px] text-[--text-secondary]/60 mt-1 max-w-[180px]">
-                LINK will log observations as you interact and publish more content.
+              <p className="text-[10px] text-text-secondary/60 mt-1 max-w-[200px]">
+                LINK logs observations dynamically as you write and post.
               </p>
             </div>
           )}
 
-          {/* Quick Stats */}
-          <div className="mt-4 p-4 rounded-xl bg-[--bg-primary]/40 border border-[--border-color]/60 space-y-3">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[--text-secondary]">
+          {/* Week Snapshot */}
+          <div className="p-4 rounded-2xl glass-card border border-border-brand space-y-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-text-primary block">
               Week {currentWeekNumber} Snapshot
             </span>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-[--text-secondary]">Posts this week</span>
-                <span className="font-bold text-white">{weekPosts.length}</span>
+            <div className="space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-text-secondary">Posts this week</span>
+                <span className="font-bold text-text-primary">{weekPosts.length}</span>
               </div>
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-[--text-secondary]">Total published</span>
-                <span className="font-bold text-white">{posts.length}</span>
+              <div className="flex items-center justify-between">
+                <span className="text-text-secondary">Total published</span>
+                <span className="font-bold text-text-primary">{posts.length}</span>
               </div>
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-[--text-secondary]">Top format</span>
-                <span className="font-bold text-[--accent-primary]">{getTopFormat()}</span>
+              <div className="flex items-center justify-between">
+                <span className="text-text-secondary">Top format</span>
+                <span className="font-bold text-accent">{getTopFormat()}</span>
               </div>
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-[--text-secondary]">Top pillar</span>
-                <span className="font-bold text-violet-400">{getTopPillar()}</span>
+              <div className="flex items-center justify-between">
+                <span className="text-text-secondary">Top pillar</span>
+                <span className="font-bold text-amber-400">{getTopPillar()}</span>
               </div>
             </div>
           </div>
