@@ -5,9 +5,10 @@ import DashboardView from './components/DashboardView';
 import ContentCalendarView from './components/ContentCalendarView';
 import WritingRoomView from './components/WritingRoomView';
 import PublishedTrackerView from './components/PublishedTrackerView';
-import { viewTransition, spring } from './utils/animations';
+import WarRoomView from './components/WarRoomView';
+import { viewTransition } from './utils/animations';
 
-const viewOrder = ['dashboard', 'content-calendar', 'writing-room', 'published-tracker'];
+const viewOrder = ['dashboard', 'content-calendar', 'writing-room', 'published-tracker', 'war-room'];
 
 export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -44,12 +45,12 @@ export default function App() {
           />
         );
       case 'published-tracker': return <PublishedTrackerView onViewOnCalendar={handleViewOnCalendar} />;
+      case 'war-room': return <WarRoomView />;
       default: return <DashboardView />;
     }
   };
 
   const navDirection = (viewOrder.indexOf(currentView) - viewOrder.indexOf(lastView.current)) || 1;
-
   const vt = viewTransition(navDirection);
 
   return (
@@ -63,7 +64,7 @@ export default function App() {
               initial={vt.initial}
               animate={vt.animate}
               exit={vt.exit}
-              transition={{ ...spring.smooth }}
+              transition={vt.transition}
               className="flex-1 flex flex-col h-full overflow-hidden"
             >
               {renderActiveView()}

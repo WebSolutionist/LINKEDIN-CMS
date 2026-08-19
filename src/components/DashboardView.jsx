@@ -144,8 +144,14 @@ export default function DashboardView({ onNavigateToPost, onWriteRecommendation 
       return { name, value: avg };
     });
 
-    // Best Post by Profile Visits
-    const sortedByVisits = [...targetPosts].sort((a, b) => (b.profile_views || 0) - (a.profile_views || 0));
+    // Best Post by Profile Visits (secondary sort by DMs then Impressions)
+    const sortedByVisits = [...targetPosts].sort((a, b) => {
+      const vDiff = (b.profile_views || 0) - (a.profile_views || 0);
+      if (vDiff !== 0) return vDiff;
+      const dmDiff = (b.dms || 0) - (a.dms || 0);
+      if (dmDiff !== 0) return dmDiff;
+      return (b.impressions || 0) - (a.impressions || 0);
+    });
     const topPostObj = sortedByVisits[0];
 
     // ICP Pulse
@@ -482,10 +488,10 @@ export default function DashboardView({ onNavigateToPost, onWriteRecommendation 
             </div>
 
             <div>
-              <p className={`font-bold tracking-tight text-text-primary ${card.large ? 'text-base line-clamp-1' : 'text-2xl'}`}>
+              <p className={`font-bold tracking-tight text-text-primary ${card.large ? 'text-xs line-clamp-2 leading-snug' : 'text-xl'}`}>
                 {card.value}
               </p>
-              <p className="text-[10px] text-text-secondary mt-1 line-clamp-1">
+              <p className="text-[10px] text-text-secondary mt-1.5 line-clamp-1">
                 {card.sub}
               </p>
             </div>
@@ -566,33 +572,43 @@ export default function DashboardView({ onNavigateToPost, onWriteRecommendation 
         </motion.div>
       </div>
 
-      {/* Posts Leaderboard for Selected Period */}
+      {/* Top 5 Posts Leaderboard for Selected Period */}
       <div className="glass-card p-6 border border-border-brand space-y-4">
         <h3 className="text-sm font-bold text-text-primary">
-          {selectedPeriod === 'ALL' ? 'All-Time Posts Leaderboard (Profile Visits)' : `Posts Published in ${selectedPeriod}`}
+          {selectedPeriod === 'ALL' ? 'Top 5 Posts Leaderboard (Profile Visits)' : `Top 5 Posts in ${selectedPeriod}`}
         </h3>
 
         {filteredPosts.length > 0 ? (
           <div className="space-y-3">
-            {filteredPosts.map(post => (
-              <div
-                key={post.id}
-                onClick={() => onNavigateToPost?.(post)}
-                className="flex items-center justify-between p-3.5 rounded-xl bg-bg-secondary/60 hover:bg-bg-tertiary border border-border-brand/40 transition-ui cursor-pointer group"
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  {post.pillar && <PillarBadge pillar={post.pillar} size="sm" />}
-                  <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-ui truncate">
-                    {getPostTitle(post)}
-                  </p>
+            {[...filteredPosts]
+              .sort((a, b) => {
+                const vDiff = (b.profile_views || 0) - (a.profile_views || 0);
+                if (vDiff !== 0) return vDiff;
+                const dmDiff = (b.dms || 0) - (a.dms || 0);
+                if (dmDiff !== 0) return dmDiff;
+                return (b.impressions || 0) - (a.impressions || 0);
+              })
+              .slice(0, 5)
+              .map((post, idx) => (
+                <div
+                  key={post.id}
+                  onClick={() => onNavigateToPost?.(post)}
+                  className="flex items-center justify-between p-3.5 rounded-xl bg-bg-secondary/60 hover:bg-bg-tertiary border border-border-brand/40 transition-ui cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <span className="text-xs font-black text-accent shrink-0 w-5">#{idx + 1}</span>
+                    {post.pillar && <PillarBadge pillar={post.pillar} size="sm" />}
+                    <p className="text-sm font-semibold text-text-primary group-hover:text-accent transition-ui truncate">
+                      {getPostTitle(post)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 text-xs tabular-nums">
+                    <span className="text-accent font-bold">{(post.profile_views || 0).toLocaleString()} visits</span>
+                    <span className="text-text-secondary">{(post.dms || 0)} DMs</span>
+                    <span className="text-text-secondary">{(post.impressions || 0).toLocaleString()} imps</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4 shrink-0 text-xs tabular-nums">
-                  <span className="text-accent font-bold">{(post.profile_views || 0).toLocaleString()} visits</span>
-                  <span className="text-text-secondary">{(post.dms || 0)} DMs</span>
-                  <span className="text-text-secondary">{(post.impressions || 0).toLocaleString()} imps</span>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         ) : (
           <p className="text-xs text-text-secondary italic">No posts recorded for this period.</p>
